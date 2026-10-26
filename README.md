@@ -98,7 +98,10 @@ choir-site/
 │   └── 0003_powerpoints_and_readings.sql
 │
 ├── public/                 plain files sent as-is
-│   └── styles.css          colours and layout (change colours at the top)
+│   ├── styles.css          colours and layout (change colours at the top)
+│   ├── theme.js            the light / dark mode button
+│   ├── readings.js         loads the daily readings from Universalis
+│   └── icon.svg, *.png     the site icon
 │
 └── src/                    the code
     ├── index.tsx           START HERE: sets up the app and lists every area
@@ -156,7 +159,12 @@ All in **`wrangler.jsonc`**, under `"vars"`:
 
 Other things to personalise:
 
-- **Colours:** top of `public/styles.css`.
+- **Colours:** the top of `public/styles.css` has one block for light mode
+  and one for dark mode. Visitors switch with the half-circle button in the
+  menu.
+- **Icon:** `public/icon.svg` (browser tab). `public/icon-192.png` and
+  `public/apple-touch-icon.png` are the same picture for phones; replace
+  them with PNGs of your own icon at 192x192 and 180x180.
 - **Welcome text:** `src/routes/public-pages.tsx`
   (look for the `TODO` comments).
 - **Readings page:** laid out like the USCCB daily readings. The readings

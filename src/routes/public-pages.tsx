@@ -224,7 +224,7 @@ function SetlistItem(props: { item: SetlistRow; sheetFiles: SongFileRow[]; linkT
 
   return (
     <li>
-      {item.notes !== "" && <span class="setlist-part">{item.notes}: </span>}
+      {item.notes !== "" && <span class="setlist-part">{item.notes}</span>}
       {props.linkToMusicLibrary ? <a href={"/music/" + item.song_id}><strong>{item.title}</strong></a> : <strong>{item.title}</strong>}
       {item.author !== "" && <span class="muted"> - {item.author}</span>}
       {item.song_key !== "" && <span class="muted"> (key of {item.song_key})</span>}

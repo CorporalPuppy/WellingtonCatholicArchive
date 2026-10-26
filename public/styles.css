@@ -1,139 +1,256 @@
 /* ==========================================================================
-   The look of the whole site.
-   Change the colours here to match the church's own colours.
+   The look of the whole site: clean and modern, with light and dark modes.
+
+   To change the colours, edit the two blocks of "--" values just below:
+   the first is light mode, the second is dark mode.
    ========================================================================== */
 
 :root {
-  --main-colour: #6b1f2a;      /* header, buttons, links */
-  --accent-colour: #b8963e;    /* small highlights */
-  --text-colour: #222222;
-  --muted-text-colour: #666666;
-  --background-colour: #fbf9f5;
-  --card-colour: #ffffff;
-  --border-colour: #e2ddd3;
+  --accent: #2d4a7c;            /* links, buttons, headings */
+  --accent-soft: #e8edf6;       /* light tint of the accent, for pills */
+  --gold: #c9a34e;              /* small highlights */
+  --text: #1d1d1f;
+  --muted: #6e6e73;
+  --background: #fbfaf7;
+  --surface: #ffffff;           /* cards and tables */
+  --border: #e7e5e0;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.04);
+  --radius: 14px;
+  --danger: #c0392b;
+  color-scheme: light;
+}
+
+/* Dark mode colours. Used when the device is in dark mode (unless the
+   visitor picked light with the half-circle button), or when they picked dark. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --accent: #9db8e8;
+    --accent-soft: #1f2a3d;
+    --gold: #e0be6e;
+    --text: #f2f2f2;
+    --muted: #a1a1a6;
+    --background: #121316;
+    --surface: #1b1c20;
+    --border: #2c2d33;
+    --shadow: none;
+    --danger: #ff6b5e;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --accent: #9db8e8;
+  --accent-soft: #1f2a3d;
+  --gold: #e0be6e;
+  --text: #f2f2f2;
+  --muted: #a1a1a6;
+  --background: #121316;
+  --surface: #1b1c20;
+  --border: #2c2d33;
+  --shadow: none;
+  --danger: #ff6b5e;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  font-family: Georgia, "Times New Roman", serif;
-  color: var(--text-colour);
-  background: var(--background-colour);
+  /* The device's own modern font: San Francisco, Segoe UI, Roboto... */
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 17px;
+  color: var(--text);
+  background: var(--background);
   line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
 }
 
-a { color: var(--main-colour); }
+a { color: var(--accent); text-underline-offset: 3px; }
+a:hover { text-decoration-thickness: 2px; }
 
 main {
-  max-width: 900px;
+  max-width: 880px;
   margin: 0 auto;
-  padding: 24px 16px 48px;
+  padding: 32px 16px 64px;
 }
 
 /* ---- Header and menu ---- */
 
 .site-header {
-  background: var(--main-colour);
-  color: white;
-  padding: 12px 16px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  /* See-through, blurred background, so the page shows faintly behind it. */
+  background: color-mix(in srgb, var(--background) 80%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+
+.header-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 10px 16px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px 16px;
 }
 
-.site-header a { color: white; text-decoration: none; }
-.site-header a:hover { text-decoration: underline; }
-.site-name { font-size: 1.4rem; font-weight: bold; }
+.site-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: -0.01em;
+}
+.site-name img { border-radius: 9px; }
 
 .site-header nav {
   display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
   align-items: center;
+  gap: 4px;
+  /* On phones the menu scrolls sideways instead of wrapping. */
+  overflow-x: auto;
+  max-width: 100%;
 }
 
-.site-header .link-button { color: white; }
+.site-header nav a,
+.nav-button,
+.theme-toggle {
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.95rem;
+  padding: 6px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-weight: normal;
+  cursor: pointer;
+}
+.site-header nav a:hover,
+.nav-button:hover,
+.theme-toggle:hover { background: var(--accent-soft); }
+
+.theme-toggle { line-height: 0; padding: 8px 10px; }
 
 .site-footer {
   text-align: center;
-  color: var(--muted-text-colour);
-  border-top: 1px solid var(--border-colour);
-  padding: 16px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  border-top: 1px solid var(--border);
+  padding: 24px 16px 40px;
 }
+.site-footer p { margin: 4px 0; }
+.site-footer a { color: var(--muted); }
 
 /* ---- Text ---- */
 
-h1, h2, h3 { color: var(--main-colour); line-height: 1.25; }
-.muted { color: var(--muted-text-colour); }
-.hero { border-bottom: 3px solid var(--accent-colour); margin-bottom: 24px; }
-.event-when { font-weight: bold; }
+h1, h2, h3 { line-height: 1.2; letter-spacing: -0.02em; }
+h1 { font-size: clamp(1.9rem, 5vw, 2.6rem); margin: 0 0 16px; }
+h2 { font-size: 1.4rem; margin: 40px 0 12px; }
+h3 { font-size: 1.1rem; }
 
-/* ---- Lists and tables ---- */
+.muted { color: var(--muted); }
+.event-when { font-weight: 600; }
+
+/* The big welcome at the top of the home page. */
+.hero { padding: 32px 0 16px; }
+.hero h1 { font-size: clamp(2.4rem, 7vw, 3.6rem); letter-spacing: -0.035em; }
+.hero p { font-size: 1.2rem; color: var(--muted); max-width: 36em; }
+
+/* ---- Cards: event lists, song lists, files, admin menu ---- */
 
 .event-list, .song-list, .file-list, .admin-menu {
   list-style: none;
   padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 10px;
 }
 
-.event-list li, .song-list li, .file-list li, .admin-menu li {
-  background: var(--card-colour);
-  border: 1px solid var(--border-colour);
-  border-radius: 6px;
-  padding: 12px 16px;
-  margin-bottom: 8px;
+.event-list li, .song-list li, .file-list li, .admin-menu li, .card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px 18px;
 }
 
-.admin-menu a { font-size: 1.2rem; }
-.admin-menu p { margin: 4px 0 0; }
+.event-list li { transition: transform 0.15s ease, border-color 0.15s ease; }
+.event-list li:hover { transform: translateY(-1px); border-color: var(--accent); }
+.event-list a { text-decoration: none; }
+
+.admin-menu { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.admin-menu a { font-weight: 600; font-size: 1.05rem; }
+.admin-menu p { margin: 4px 0 0; font-size: 0.92rem; }
+
+.card { margin-bottom: 12px; }
+
+/* ---- Tables ---- */
 
 table {
   width: 100%;
-  border-collapse: collapse;
-  background: var(--card-colour);
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
 }
 
 th, td {
   text-align: left;
-  padding: 8px;
-  border-bottom: 1px solid var(--border-colour);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
   vertical-align: top;
 }
+tr:last-child th, tr:last-child td { border-bottom: none; }
+thead th { font-size: 0.85rem; color: var(--muted); font-weight: 600; }
 
 .user-table { display: block; overflow-x: auto; }
 
 audio { width: 100%; margin-top: 8px; }
 
-/* Long text typed by an admin: keep its line breaks. */
-.long-text { white-space: pre-wrap; margin-top: 16px; }
-
 /* ---- Forms ---- */
 
 form label {
   display: block;
-  margin-bottom: 12px;
-  font-weight: bold;
+  margin-bottom: 14px;
+  font-weight: 600;
+  font-size: 0.95rem;
 }
 
 form input[type="text"],
 form input[type="email"],
 form input[type="password"],
 form input[type="search"],
-form input[type="datetime-local"],
+form input[type="url"],
 form input[type="date"],
+form input[type="datetime-local"],
+form input[type="file"],
 form textarea,
 form select {
   display: block;
   width: 100%;
-  margin-top: 4px;
-  padding: 8px;
+  margin-top: 6px;
+  padding: 10px 12px;
   font: inherit;
   font-weight: normal;
-  border: 1px solid var(--border-colour);
-  border-radius: 4px;
-  background: white;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+form input:focus, form textarea:focus, form select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 form label.checkbox { font-weight: normal; }
@@ -149,43 +266,118 @@ form.row {
 form.row input, form.row select { width: auto; flex: 1 1 160px; margin: 0; }
 
 form.inline { display: inline; }
-form.search { display: flex; gap: 8px; }
-form.search input { margin: 0; }
+form.search { display: flex; gap: 8px; margin-bottom: 20px; }
+form.search input, form.search select { margin: 0; }
 
 button, .button {
   display: inline-block;
-  background: var(--main-colour);
-  color: white;
+  background: var(--accent);
+  color: var(--background);
   border: none;
-  border-radius: 4px;
-  padding: 8px 16px;
+  border-radius: 999px;
+  padding: 10px 20px;
   font: inherit;
+  font-weight: 600;
+  font-size: 0.95rem;
   cursor: pointer;
   text-decoration: none;
+  white-space: nowrap;
 }
+button:hover, .button:hover { filter: brightness(1.1); }
 
-button.danger { background: #a00; }
+button.danger { background: var(--danger); }
 
 /* A button that looks like a link. */
 button.link-button {
   background: none;
-  color: var(--main-colour);
+  color: var(--accent);
   padding: 0;
+  font-weight: normal;
   text-decoration: underline;
+  text-underline-offset: 3px;
 }
-button.danger-text { color: #a00; }
+button.danger-text { color: var(--danger); }
 
-.narrow { max-width: 480px; }
+.narrow { max-width: 520px; }
+
+fieldset.reading-fields {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin: 0 0 16px;
+  padding: 8px 14px 0;
+}
+fieldset.reading-fields legend { font-weight: 700; color: var(--accent); padding: 0 6px; }
 
 /* ---- Messages ---- */
 
-.notice { padding: 12px 16px; border-radius: 6px; }
-.notice-error { background: #fde8e8; color: #8a1111; }
-.notice-success { background: #e6f4ea; color: #1d5b2c; }
+.notice { padding: 12px 16px; border-radius: 10px; }
+.notice-error { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.notice-success { background: color-mix(in srgb, #2e9b55 14%, transparent); color: #2e9b55; }
+
+/* Long text typed by an admin: keep its line breaks. */
+.long-text { white-space: pre-wrap; margin-top: 16px; }
+
+/* ---- Calendar and set lists ---- */
+
+.month-heading {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin: 36px 0 12px;
+}
+
+.setlist { padding-left: 0; list-style: none; counter-reset: song; display: grid; gap: 10px; }
+.setlist li {
+  counter-increment: song;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px 18px 14px 56px;
+  position: relative;
+}
+/* The song number in a circle on the left. */
+.setlist li::before {
+  content: counter(song);
+  position: absolute;
+  left: 16px;
+  top: 14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.9rem;
+  display: grid;
+  place-items: center;
+}
+.setlist a { text-decoration: none; }
+.setlist-part {
+  display: block;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+/* Small pill-shaped links: Sheet music, Chord chart, YouTube. */
+.setlist-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.setlist-links a {
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 4px 12px;
+  text-decoration: none;
+}
+.setlist-links a:hover { filter: brightness(0.96); }
 
 /* ---- Readings page (laid out like the USCCB daily readings) ---- */
 
-.readings-page { max-width: 720px; margin: 0 auto; }
+.readings-page { max-width: 700px; margin: 0 auto; }
 
 .readings-nav {
   display: flex;
@@ -193,94 +385,49 @@ button.danger-text { color: #a00; }
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border-colour);
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
 }
+.readings-nav > a { text-decoration: none; font-weight: 600; }
 
 .readings-date-picker { display: flex; gap: 8px; }
 .readings-date-picker input { margin: 0; width: auto; }
 .readings-today-link { text-align: center; margin: 8px 0 0; }
 
-.readings-header { text-align: center; margin: 24px 0 8px; }
-.readings-header h1 { margin: 4px 0; font-size: 1.8rem; }
+.readings-header { text-align: center; margin: 32px 0 8px; }
+.readings-header h1 { margin: 6px 0; font-size: clamp(1.6rem, 4.5vw, 2.2rem); }
 .readings-date {
   margin: 0;
-  color: var(--muted-text-colour);
+  color: var(--gold);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 0.9rem;
+  letter-spacing: 0.12em;
+  font-size: 0.8rem;
+  font-weight: 700;
 }
-.readings-lectionary { margin: 4px 0 0; color: var(--muted-text-colour); }
+.readings-lectionary { margin: 4px 0 0; color: var(--muted); }
 
 .reading {
-  border-top: 1px solid var(--border-colour);
-  padding-top: 16px;
-  margin-top: 24px;
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+  margin-top: 28px;
 }
-.reading h2 { margin: 0 0 4px; font-size: 1.4rem; }
-.reading-reference { margin: 0 0 12px; color: var(--main-colour); font-weight: bold; }
+.reading h2 { margin: 0 0 4px; font-size: 1.3rem; }
+.reading-reference { margin: 0 0 12px; color: var(--accent); font-weight: 600; }
 
-/* Keep the line breaks of pasted-in texts, and make them easy to read. */
-.reading-text { white-space: pre-wrap; font-size: 1.1rem; line-height: 1.75; }
+/* Readings are for reading: a little bigger, with roomy lines. */
+.reading-text { white-space: pre-wrap; font-size: 1.1rem; line-height: 1.8; }
+.reading-html { font-size: 1.1rem; line-height: 1.8; }
 
-.readings-source { text-align: center; margin-top: 32px; font-size: 0.95rem; }
+.readings-copyright { text-align: center; font-size: 0.8rem; margin-top: 28px; }
+.readings-source { text-align: center; margin-top: 24px; font-size: 0.95rem; }
 
-fieldset.reading-fields {
-  border: 1px solid var(--border-colour);
-  border-radius: 6px;
-  margin: 0 0 16px;
-  padding: 8px 12px 0;
-}
-fieldset.reading-fields legend { font-weight: bold; color: var(--main-colour); padding: 0 4px; }
+/* ---- Phones ---- */
 
-/* On phones: previous/next on one line, the date picker underneath. */
 @media (max-width: 600px) {
+  body { font-size: 16px; }
+  .header-inner { padding: 8px 12px; }
+  /* Menu goes under the name and scrolls sideways. */
+  .site-header nav { width: 100%; margin: 0 -8px; }
+  /* Readings: previous/next on one line, the date picker underneath. */
   .readings-date-picker { order: 3; flex-basis: 100%; justify-content: center; }
-}
-
-/* Readings from Universalis arrive as ready-made HTML. */
-.reading-html { font-size: 1.1rem; line-height: 1.75; }
-.readings-copyright { text-align: center; font-size: 0.85rem; margin-top: 24px; }
-
-/* ---- Calendar and set lists ---- */
-
-.month-heading {
-  border-bottom: 2px solid var(--accent-colour);
-  padding-bottom: 4px;
-  margin-top: 32px;
-}
-
-.setlist { padding-left: 24px; }
-.setlist li { margin-bottom: 14px; }
-.setlist-part { color: var(--muted-text-colour); }
-
-/* Small pill-shaped links: Sheet music, Chord chart, YouTube. */
-.setlist-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
-.setlist-links a {
-  font-size: 0.9rem;
-  border: 1px solid var(--border-colour);
-  background: var(--card-colour);
-  border-radius: 999px;
-  padding: 2px 12px;
-  text-decoration: none;
-}
-
-.card {
-  background: var(--card-colour);
-  border: 1px solid var(--border-colour);
-  border-radius: 6px;
-  padding: 12px 16px;
-  margin-bottom: 12px;
-}
-
-form input[type="url"] {
-  display: block;
-  width: 100%;
-  margin-top: 4px;
-  padding: 8px;
-  font: inherit;
-  font-weight: normal;
-  border: 1px solid var(--border-colour);
-  border-radius: 4px;
-  background: white;
 }
