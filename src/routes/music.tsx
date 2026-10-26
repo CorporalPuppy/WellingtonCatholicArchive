@@ -44,8 +44,12 @@ routes.get("/music", async (c) => {
       <ul class="song-list">
         {songs.map((song) => (
           <li>
-            <a href={"/music/" + song.id}>{song.title}</a>
-            {song.author !== "" && <span class="muted"> - {song.author}</span>}
+            {/* The whole card is the link: the title, with the author underneath */}
+            <a href={"/music/" + song.id} class="song-card">
+              <strong>{song.title}</strong>
+              {song.author !== "" && <span class="muted">{song.author}</span>}
+              <span class="song-card-key">{song.song_key !== "" && "Key " + song.song_key}</span>
+            </a>
           </li>
         ))}
       </ul>

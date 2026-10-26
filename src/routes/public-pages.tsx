@@ -30,31 +30,55 @@ routes.get("/", async (c) => {
     "Welcome",
     <>
       <section class="hero">
+        {/* TODO: change this small label and the welcome text to the choir's own words. */}
+        <p class="eyebrow">Catholic choir</p>
         <h1>{c.env.CHOIR_NAME}</h1>
-        {/* TODO: replace this placeholder text with the choir's own welcome. */}
-        <p>
+        <p class="hero-text">
           A short welcome goes here: who the choir is, which parishes we sing
           at, and how to join.
+        </p>
+        <p class="hero-buttons">
+          <a class="button" href="/events">See where we're singing</a>
+          <a class="button button-secondary" href="/readings">Today's readings</a>
         </p>
       </section>
 
       <section>
-        <h2>Where we're singing next</h2>
+        <div class="section-heading">
+          <h2>Where we're singing next</h2>
+          <a href="/events">Full calendar &rarr;</a>
+        </div>
         <EventList events={nextFewEvents} />
-        <p>
-          <a class="button button-secondary" href="/events">See the full calendar</a>
-        </p>
       </section>
 
       <section>
         <h2>For singers</h2>
-        <p>
-          <a class="button button-secondary" href="/readings">Today's readings</a> <a class="button button-secondary" href="/music">Music library</a>
-        </p>
+        {/* One card per part of the site. Music and PowerPoints only show for members. */}
+        <div class="feature-grid">
+          <FeatureCard link="/events" title="Calendar" text="Every Mass and rehearsal, as a list or a month view." />
+          <FeatureCard link="/readings" title="Daily readings" text="The readings for today, or any day you pick." />
+          {canSeeMemberPages(c) && (
+            <FeatureCard link="/music" title="Music library" text="Sheet music, chord charts, MuseScore files and recordings." />
+          )}
+          {canSeeMemberPages(c) && (
+            <FeatureCard link="/powerpoints" title="PowerPoints" text="Slides with the words, ready to project at Mass." />
+          )}
+        </div>
       </section>
     </>,
   );
 });
+
+/** A card on the home page that links to one part of the site. */
+function FeatureCard(props: { link: string; title: string; text: string }) {
+  return (
+    <a class="feature-card" href={props.link}>
+      <strong>{props.title}</strong>
+      <span class="muted">{props.text}</span>
+      <span class="feature-arrow">&rarr;</span>
+    </a>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // One event: GET /events/123
