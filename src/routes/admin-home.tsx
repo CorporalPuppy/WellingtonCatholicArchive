@@ -32,7 +32,7 @@ routes.get("/admin", (c) => {
         </li>
         <li>
           <a href="/admin/readings">Daily readings</a>
-          <p class="muted">Enter the readings for each day.</p>
+          <p class="muted">Readings fill in from Universalis by themselves. Use this only to replace a day's readings with your own.</p>
         </li>
         <li>
           <a href="/admin/users">Member accounts</a>

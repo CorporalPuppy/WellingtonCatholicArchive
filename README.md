@@ -152,11 +152,16 @@ Other things to personalise:
 - **Colours:** top of `public/styles.css`.
 - **Welcome text, address, service times:** `src/routes/public-pages.tsx`
   (look for the `TODO` comments).
-- **Readings page:** laid out like the USCCB daily readings. Admins enter
-  each part (Reading 1, Responsorial Psalm, Reading 2, Alleluia, Gospel) with
-  its reference and pasted-in full text under **Admin → Daily readings**.
-- **Readings link:** each day links to the full texts on Universalis. To use
-  another site, change `fullReadingsLink` in `src/routes/readings.tsx`.
+- **Readings page:** laid out like the USCCB daily readings. The readings
+  fill in by themselves from [Universalis](https://universalis.com/n-jsonp.htm):
+  the visitor's browser loads them (`public/readings.js`), and Universalis's
+  copyright notice and a link back are shown, as they ask. Universalis
+  officially supports today's and next Sunday's readings; other days may
+  only show the link. To replace a day's readings with your own, use
+  **Admin → Daily readings**.
+- **Readings calendar:** `UNIVERSALIS_CALENDAR` in `wrangler.jsonc` picks
+  Universalis's local calendar (so local feast days match). Leave it `""`
+  for the General Roman Calendar.
 - **Logo:** put an image in `public/` (e.g. `public/logo.png`) and add
   `<img src="/logo.png" alt="" height="40" />` in `src/pages/layout.tsx`.
 

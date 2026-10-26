@@ -26,6 +26,11 @@
     // "no"  = only logged-in members can see those.
     // Admin pages always need an admin login either way.
     "EVERYTHING_PUBLIC": "yes",
+    // Which local calendar Universalis uses for the daily readings.
+    // "" = the General Roman Calendar. To use a local one, choose it on
+    // universalis.com and copy the part of the address between
+    // "universalis.com/" and the date, then put it here.
+    "UNIVERSALIS_CALENDAR": "",
     // Used for "upcoming" event lists.
     "TIMEZONE": "Pacific/Auckland"
   }

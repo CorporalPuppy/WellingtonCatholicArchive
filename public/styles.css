@@ -237,3 +237,7 @@ fieldset.reading-fields legend { font-weight: bold; color: var(--main-colour); p
 @media (max-width: 600px) {
   .readings-date-picker { order: 3; flex-basis: 100%; justify-content: center; }
 }
+
+/* Readings from Universalis arrive as ready-made HTML. */
+.reading-html { font-size: 1.1rem; line-height: 1.75; }
+.readings-copyright { text-align: center; font-size: 0.85rem; margin-top: 24px; }

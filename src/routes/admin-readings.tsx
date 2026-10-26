@@ -6,6 +6,10 @@
 //   POST /admin/readings                  save the readings for a date
 //   POST /admin/readings/:date/delete     delete one date's readings
 //
+// Most days you don't need this page: the Readings page loads each day's
+// readings from Universalis by itself. Typing readings in here replaces
+// the Universalis ones for that day (handy for a special parish occasion).
+//
 // Note: Bible translations are copyrighted. Only paste in full texts the
 // church is allowed to publish (for example under its lectionary licence).
 // ===========================================================================

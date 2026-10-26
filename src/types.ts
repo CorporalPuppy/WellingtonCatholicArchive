@@ -7,6 +7,7 @@ export type Env = {
   CHURCH_NAME: string;
   EVERYTHING_PUBLIC: "yes" | "no";
   TIMEZONE: string;
+  UNIVERSALIS_CALENDAR: string;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
   SETUP_TOKEN?: string;
