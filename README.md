@@ -249,10 +249,22 @@ npm run db:migrate:remote
 
 Type `y` if it asks to confirm. This runs the SQL files in `migrations/`.
 
-### 8. Set the secret keys
+### 8. Upload the site
+
+```
+npm run deploy
+```
+
+It prints the address, like `https://choir-site.yourname.workers.dev`.
+**Run this again any time you change the code.**
+
+Nobody can log in yet. That needs the secret keys in the next step.
+
+### 9. Set the secret keys
 
 Secrets are kept by Cloudflare, never in the code. Run each command and
-paste the value when asked:
+paste the value when asked. (If Wrangler says there is no Worker called
+`choir-site`, step 8 hasn't finished yet: run `npm run deploy` first.)
 
 ```
 npx wrangler secret put BETTER_AUTH_SECRET
@@ -264,22 +276,13 @@ A long random string. You can make one with:
 npx wrangler secret put BETTER_AUTH_URL
 ```
 The site's address. Use your real domain, e.g. `https://ourchoir.nz`.
-(If you are trying it on the free `*.workers.dev` address first, use that,
-and set this again once your domain is attached.)
+(If you are trying it on the free `*.workers.dev` address from step 8
+first, use that, and set this again once your domain is attached.)
 
 ```
 npx wrangler secret put SETUP_TOKEN
 ```
 A one-time code you make up. You will type it on the setup page in step 11.
-
-### 9. Upload the site
-
-```
-npm run deploy
-```
-
-It prints the address, like `https://choir-site.yourname.workers.dev`.
-**Run this again any time you change the code.**
 
 ### 10. Attach your domain
 
@@ -288,7 +291,7 @@ In the Cloudflare dashboard: **Workers & Pages** → **choir-site** →
 your domain (e.g. `ourchoir.nz` or `www.ourchoir.nz`). Because the domain
 is already on Cloudflare, DNS and HTTPS are set up for you.
 
-Make sure `BETTER_AUTH_URL` (step 8) matches this address exactly.
+Make sure `BETTER_AUTH_URL` (step 9) matches this address exactly.
 
 ### 11. Create your admin account
 
