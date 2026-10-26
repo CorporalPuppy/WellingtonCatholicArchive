@@ -5,7 +5,7 @@ import type { Context } from "hono";
 import type { Child } from "hono/jsx";
 import { raw } from "hono/html";
 import { Layout } from "./layout";
-import { canSeeMusic } from "../helpers";
+import { canSeeMemberPages } from "../helpers";
 import type { AppEnv } from "../types";
 
 export function renderPage(c: Context<AppEnv>, title: string, content: Child, status: 200 | 400 | 403 | 404 = 200) {
@@ -17,7 +17,7 @@ export function renderPage(c: Context<AppEnv>, title: string, content: Child, st
         title={title}
         churchName={c.env.CHURCH_NAME}
         user={c.get("user")}
-        showMusicLink={canSeeMusic(c)}
+        showMemberLinks={canSeeMemberPages(c)}
       >
         {content}
       </Layout>

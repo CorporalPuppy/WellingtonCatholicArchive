@@ -21,9 +21,11 @@
   ],
   "vars": {
     "CHURCH_NAME": "Our Church",
-    // "members" = only logged-in members can see and download music.
-    // "public"  = anyone can browse and download music.
-    "MUSIC_ACCESS": "members",
+    // "yes" = everyone can see music, PowerPoints, rosters, set lists
+    //         and members-only events, without logging in.
+    // "no"  = only logged-in members can see those.
+    // Admin pages always need an admin login either way.
+    "EVERYTHING_PUBLIC": "yes",
     // Used for "upcoming" event lists.
     "TIMEZONE": "Pacific/Auckland"
   }

@@ -5,7 +5,7 @@ export type Env = {
   MUSIC: R2Bucket;
   ASSETS: Fetcher;
   CHURCH_NAME: string;
-  MUSIC_ACCESS: "members" | "public";
+  EVERYTHING_PUBLIC: "yes" | "no";
   TIMEZONE: string;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
@@ -66,4 +66,26 @@ export type SetlistRow = {
   notes: string;
   title: string;
   song_key: string;
+};
+
+export type PowerpointRow = {
+  id: number;
+  title: string;
+  service_date: string;
+  notes: string;
+  r2_key: string;
+  filename: string;
+  content_type: string;
+  size: number;
+  uploaded_at: string;
+};
+
+export type ReadingsRow = {
+  reading_date: string;
+  day_name: string;
+  first_reading: string;
+  psalm: string;
+  second_reading: string;
+  gospel: string;
+  notes: string;
 };

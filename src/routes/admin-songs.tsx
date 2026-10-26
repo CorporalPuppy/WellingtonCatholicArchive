@@ -27,6 +27,7 @@ import {
   updateSong,
   type SongDetails,
 } from "../database";
+import { makeStorageKey } from "../files";
 import { FILE_KIND_LABELS, formatFileSize, getFormText } from "../helpers";
 import { requireAdmin } from "../middleware";
 import { Notice } from "../pages/layout";
@@ -230,9 +231,7 @@ routes.post("/admin/songs/:id/files", async (c) => {
   }
 
   // Where the file lives in R2, e.g. "songs/12/3f2a...-amazing-grace.pdf".
-  // The random part stops two files with the same name clashing.
-  const safeName = uploaded.name.replace(/[^a-zA-Z0-9._-]+/g, "-");
-  const r2Key = "songs/" + songId + "/" + crypto.randomUUID() + "-" + safeName;
+  const r2Key = makeStorageKey("songs/" + songId, uploaded.name);
   const contentType = uploaded.type || "application/octet-stream";
 
   await c.env.MUSIC.put(r2Key, uploaded.stream(), {

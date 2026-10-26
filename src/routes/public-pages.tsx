@@ -1,11 +1,12 @@
 // ===========================================================================
 // Pages anyone can see: the home page and the events calendar.
-// Logged-in members also see private events, rosters and set lists.
+// Members (or everyone, if EVERYTHING_PUBLIC is "yes") also see
+// members-only events, rosters and set lists.
 // ===========================================================================
 
 import { Hono } from "hono";
 import { getEvent, getRoster, getSetlist, getUpcomingEvents } from "../database";
-import { canSeeMusic, formatEventTime, getTodaysDate, isLoggedIn } from "../helpers";
+import { canSeeMemberPages, formatEventTime, getTodaysDate } from "../helpers";
 import { renderPage } from "../pages/render";
 import type { AppEnv, EventRow } from "../types";
 
@@ -16,7 +17,7 @@ const routes = new Hono<AppEnv>();
 // ---------------------------------------------------------------------------
 routes.get("/", async (c) => {
   const today = getTodaysDate(c.env.TIMEZONE);
-  const events = await getUpcomingEvents(c.env.DB, today, isLoggedIn(c));
+  const events = await getUpcomingEvents(c.env.DB, today, canSeeMemberPages(c));
   const nextFewEvents = events.slice(0, 3);
 
   return renderPage(
@@ -54,7 +55,7 @@ routes.get("/", async (c) => {
 // ---------------------------------------------------------------------------
 routes.get("/events", async (c) => {
   const today = getTodaysDate(c.env.TIMEZONE);
-  const events = await getUpcomingEvents(c.env.DB, today, isLoggedIn(c));
+  const events = await getUpcomingEvents(c.env.DB, today, canSeeMemberPages(c));
 
   return renderPage(
     c,
@@ -73,20 +74,20 @@ routes.get("/events/:id", async (c) => {
   const eventId = Number(c.req.param("id"));
   const event = await getEvent(c.env.DB, eventId);
 
-  // Private events are only for logged-in members.
-  const allowed = event !== null && (event.is_public === 1 || isLoggedIn(c));
+  // Members-only events need a login (unless EVERYTHING_PUBLIC is "yes").
+  const allowed = event !== null && (event.is_public === 1 || canSeeMemberPages(c));
   if (event === null || !allowed) {
     return renderPage(c, "Not found", <p>Sorry, we couldn't find that event.</p>, 404);
   }
 
-  // Rosters and set lists contain people's names, so only members see them.
+  // Rosters contain people's names, so normally only members see them.
   let roster = null;
   let setlist = null;
-  if (isLoggedIn(c)) {
+  if (canSeeMemberPages(c)) {
     roster = await getRoster(c.env.DB, eventId);
     setlist = await getSetlist(c.env.DB, eventId);
   }
-  const linkSongs = canSeeMusic(c);
+  const linkSongs = canSeeMemberPages(c);
 
   return renderPage(
     c,

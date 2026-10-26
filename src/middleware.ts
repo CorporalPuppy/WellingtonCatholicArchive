@@ -2,7 +2,7 @@
 
 import { createMiddleware } from "hono/factory";
 import { createAuth } from "./auth";
-import { canSeeMusic, isAdmin, isLoggedIn } from "./helpers";
+import { canSeeMemberPages, isAdmin, isLoggedIn } from "./helpers";
 import type { AppEnv } from "./types";
 
 /**
@@ -47,9 +47,12 @@ export const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
   await next();
 });
 
-/** Only lets people through who are allowed to see the music. */
-export const requireMusicAccess = createMiddleware<AppEnv>(async (c, next) => {
-  if (!canSeeMusic(c)) {
+/**
+ * Only lets people through who may see the members' pages
+ * (everyone, if EVERYTHING_PUBLIC is "yes").
+ */
+export const requireMemberAccess = createMiddleware<AppEnv>(async (c, next) => {
+  if (!canSeeMemberPages(c)) {
     const backTo = encodeURIComponent(c.req.path);
     return c.redirect("/login?next=" + backTo);
   }

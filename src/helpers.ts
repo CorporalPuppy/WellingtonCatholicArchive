@@ -54,6 +54,40 @@ export function formatEventTime(localTime: string): string {
   return formatter.format(date);
 }
 
+/**
+ * Turns "2026-10-26" into "Monday, 26 October 2026".
+ */
+export function formatDate(date: string): string {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  const day = Number(date.slice(8, 10));
+  const formatter = new Intl.DateTimeFormat("en-NZ", {
+    timeZone: "UTC",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  return formatter.format(new Date(Date.UTC(year, month - 1, day)));
+}
+
+/**
+ * Moves a date forwards or backwards by some days.
+ * addDays("2026-10-31", 1) gives "2026-11-01".
+ */
+export function addDays(date: string, days: number): string {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  const day = Number(date.slice(8, 10));
+  const moved = new Date(Date.UTC(year, month - 1, day + days));
+  return moved.toISOString().slice(0, 10);
+}
+
+/** True if the text looks like a date, "YYYY-MM-DD". */
+export function isValidDate(text: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(text);
+}
+
 // ---------------------------------------------------------------------------
 // Files
 // ---------------------------------------------------------------------------
@@ -93,13 +127,17 @@ export function isAdmin(c: Context<AppEnv>): boolean {
 }
 
 /**
- * True if this visitor may see the music library.
- * Controlled by MUSIC_ACCESS in wrangler.jsonc:
- *   "members" -> only logged-in members
- *   "public"  -> everyone
+ * True if this visitor may see the members' pages: music, PowerPoints,
+ * rosters, set lists and members-only events.
+ *
+ * Controlled by EVERYTHING_PUBLIC in wrangler.jsonc:
+ *   "yes" -> everyone can see them, no login needed
+ *   "no"  -> only logged-in members can see them
+ *
+ * (Admin pages always need an admin login, whatever this is set to.)
  */
-export function canSeeMusic(c: Context<AppEnv>): boolean {
-  if (c.env.MUSIC_ACCESS === "public") {
+export function canSeeMemberPages(c: Context<AppEnv>): boolean {
+  if (c.env.EVERYTHING_PUBLIC === "yes") {
     return true;
   }
   return isLoggedIn(c);

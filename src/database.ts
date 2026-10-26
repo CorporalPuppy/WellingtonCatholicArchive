@@ -4,7 +4,7 @@
 //
 // The tables are created by the files in the /migrations folder.
 
-import type { EventRow, RosterRow, SetlistRow, SongFileRow, SongRow } from "./types";
+import type { EventRow, PowerpointRow, ReadingsRow, RosterRow, SetlistRow, SongFileRow, SongRow } from "./types";
 
 // ===========================================================================
 // Events
@@ -207,6 +207,91 @@ export async function addSongFile(
 
 export async function deleteSongFileRecord(db: D1Database, fileId: number): Promise<void> {
   await db.prepare("DELETE FROM song_files WHERE id = ?").bind(fileId).run();
+}
+
+// ===========================================================================
+// PowerPoint archive (the files are in R2; this is the list of them)
+// ===========================================================================
+
+/** All PowerPoints, newest service first, or only those matching a search. */
+export async function getPowerpoints(db: D1Database, search: string): Promise<PowerpointRow[]> {
+  if (search === "") {
+    const result = await db.prepare("SELECT * FROM powerpoints ORDER BY service_date DESC, title").all<PowerpointRow>();
+    return result.results;
+  }
+  const pattern = "%" + search + "%";
+  const result = await db
+    .prepare("SELECT * FROM powerpoints WHERE title LIKE ? OR notes LIKE ? OR service_date LIKE ? ORDER BY service_date DESC, title")
+    .bind(pattern, pattern, pattern)
+    .all<PowerpointRow>();
+  return result.results;
+}
+
+export async function getPowerpoint(db: D1Database, powerpointId: number): Promise<PowerpointRow | null> {
+  return await db.prepare("SELECT * FROM powerpoints WHERE id = ?").bind(powerpointId).first<PowerpointRow>();
+}
+
+export async function addPowerpoint(
+  db: D1Database,
+  title: string,
+  serviceDate: string,
+  notes: string,
+  r2Key: string,
+  filename: string,
+  contentType: string,
+  size: number,
+): Promise<void> {
+  await db
+    .prepare(
+      "INSERT INTO powerpoints (title, service_date, notes, r2_key, filename, content_type, size) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(title, serviceDate, notes, r2Key, filename, contentType, size)
+    .run();
+}
+
+export async function deletePowerpointRecord(db: D1Database, powerpointId: number): Promise<void> {
+  await db.prepare("DELETE FROM powerpoints WHERE id = ?").bind(powerpointId).run();
+}
+
+// ===========================================================================
+// Daily readings (one row per date)
+// ===========================================================================
+
+export async function getReadingsForDate(db: D1Database, date: string): Promise<ReadingsRow | null> {
+  return await db.prepare("SELECT * FROM daily_readings WHERE reading_date = ?").bind(date).first<ReadingsRow>();
+}
+
+/** The readings already entered, from a date onwards (for the admin list). */
+export async function getReadingsFrom(db: D1Database, fromDate: string): Promise<ReadingsRow[]> {
+  const result = await db
+    .prepare("SELECT * FROM daily_readings WHERE reading_date >= ? ORDER BY reading_date")
+    .bind(fromDate)
+    .all<ReadingsRow>();
+  return result.results;
+}
+
+/** Saves the readings for a date, replacing any already saved for that date. */
+export async function saveReadings(db: D1Database, readings: ReadingsRow): Promise<void> {
+  await db
+    .prepare(
+      `INSERT OR REPLACE INTO daily_readings
+         (reading_date, day_name, first_reading, psalm, second_reading, gospel, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      readings.reading_date,
+      readings.day_name,
+      readings.first_reading,
+      readings.psalm,
+      readings.second_reading,
+      readings.gospel,
+      readings.notes,
+    )
+    .run();
+}
+
+export async function deleteReadings(db: D1Database, date: string): Promise<void> {
+  await db.prepare("DELETE FROM daily_readings WHERE reading_date = ?").bind(date).run();
 }
 
 // ===========================================================================

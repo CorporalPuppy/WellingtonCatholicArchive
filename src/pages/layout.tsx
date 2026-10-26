@@ -8,7 +8,7 @@ type LayoutProps = {
   title: string;
   churchName: string;
   user: SessionUser | null;
-  showMusicLink: boolean;
+  showMemberLinks: boolean;
   children?: Child;
 };
 
@@ -30,7 +30,9 @@ export function Layout(props: LayoutProps) {
           <nav>
             <a href="/">Home</a>
             <a href="/events">Events</a>
-            {props.showMusicLink && <a href="/music">Music</a>}
+            <a href="/readings">Readings</a>
+            {props.showMemberLinks && <a href="/music">Music</a>}
+            {props.showMemberLinks && <a href="/powerpoints">PowerPoints</a>}
             {isAdmin && <a href="/admin">Admin</a>}
             {user !== null && <a href="/account">My account</a>}
             {user === null && <a href="/login">Members login</a>}

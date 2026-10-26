@@ -1,11 +1,17 @@
 # Church Website
 
-A website for the church's events, volunteer rosters, set lists and music
-files. It runs on Cloudflare for free (apart from the yearly domain fee).
+A website for the church's events, daily readings, volunteer rosters, set
+lists, music files and PowerPoint archive. It runs on Cloudflare for free
+(apart from the yearly domain fee).
 
-- **Everyone** can see the home page and public events.
-- **Members** log in to see private events, rosters, set lists and the music library.
-- **Admins** add events, songs, music files and member accounts.
+- **Everyone** can see the home page, events, daily readings, the music
+  library, the PowerPoint archive, rosters and set lists.
+- **Admins** log in to add events, readings, songs, files, PowerPoints and
+  member accounts.
+
+Right now everything is open to everyone. To make the music, PowerPoints,
+rosters, set lists and members-only events need a login, change
+`EVERYTHING_PUBLIC` to `"no"` (see Part 2).
 
 Nobody can sign themselves up. An admin creates each account.
 
@@ -82,7 +88,8 @@ church-site/
 │
 ├── migrations/             SQL that creates the database tables
 │   ├── 0001_auth.sql       login tables (used by Better Auth)
-│   └── 0002_church.sql     events, songs, files, rosters, set lists
+│   ├── 0002_church.sql     events, songs, files, rosters, set lists
+│   └── 0003_powerpoints_and_readings.sql
 │
 ├── public/                 plain files sent as-is
 │   └── styles.css          colours and layout (change colours at the top)
@@ -93,6 +100,7 @@ church-site/
     ├── password.ts         how passwords are scrambled before saving
     ├── middleware.ts       "must be logged in" / "must be admin" checks
     ├── database.ts         every SQL query, one plain function each
+    ├── files.ts            sends files from R2 to the browser
     ├── helpers.ts          small tools: dates, file sizes, form reading
     ├── types.ts            the shape of each table row and setting
     ├── pages/
@@ -103,10 +111,14 @@ church-site/
         ├── login.tsx          log in, log out, first-time setup
         ├── account.tsx        change your own password
         ├── music.tsx          music library and file downloads
+        ├── powerpoints.tsx    PowerPoint archive
+        ├── readings.tsx       readings for each day
         ├── admin-home.tsx     admin dashboard
         ├── admin-events.tsx   add/edit events, rosters, set lists
         ├── admin-songs.tsx    add/edit songs, upload files
-        └── admin-users.tsx    create and manage member accounts
+        ├── admin-users.tsx    create and manage member accounts
+        ├── admin-powerpoints.tsx  upload and delete PowerPoints
+        └── admin-readings.tsx     enter each day's readings
 ```
 
 ### Following one request through the code
@@ -131,7 +143,7 @@ All in **`wrangler.jsonc`**, under `"vars"`:
 | Setting | What it does |
 | --- | --- |
 | `CHURCH_NAME` | Shown in the header, footer and page titles. |
-| `MUSIC_ACCESS` | `"members"` (default): only logged-in members can see music. `"public"`: anyone can. |
+| `EVERYTHING_PUBLIC` | `"yes"` (now): everyone can see music, PowerPoints, rosters, set lists and members-only events. `"no"`: only logged-in members can. Admin pages always need an admin login. |
 | `TIMEZONE` | Used to decide which events are "upcoming". `Pacific/Auckland` for New Zealand. |
 
 Other things to personalise:
@@ -139,6 +151,8 @@ Other things to personalise:
 - **Colours:** top of `public/styles.css`.
 - **Welcome text, address, service times:** `src/routes/public-pages.tsx`
   (look for the `TODO` comments).
+- **Readings link:** each day links to the full texts on Universalis. To use
+  another site, change `fullReadingsLink` in `src/routes/readings.tsx`.
 - **Logo:** put an image in `public/` (e.g. `public/logo.png`) and add
   `<img src="/logo.png" alt="" height="40" />` in `src/pages/layout.tsx`.
 
@@ -299,10 +313,15 @@ like `migrations/0003_add_something.sql` with the change (e.g.
 ## Things to keep in mind
 
 - **Copyright:** a church copyright licence usually covers sharing within the
-  congregation, not posting publicly. Keep `MUSIC_ACCESS` as `"members"` for
-  copyrighted songs, and check what your licence covers.
-- **Privacy:** rosters and member details are personal information under the
-  NZ Privacy Act 2020. They are only shown to logged-in members.
+  congregation, not posting publicly. While `EVERYTHING_PUBLIC` is `"yes"`,
+  anyone on the internet can download the music and PowerPoints, so only
+  upload copyrighted songs once you switch it to `"no"`. The same goes for
+  typing the full text of the readings: Bible translations are copyrighted,
+  so the readings page shows references and links to Universalis for the
+  full texts.
+- **Privacy:** rosters contain people's names, which is personal information
+  under the NZ Privacy Act 2020. While `EVERYTHING_PUBLIC` is `"yes"`,
+  anyone can see them.
 - **Free limits:** D1 allows 5 million reads and 100,000 writes a day on the
   free plan, and R2 allows 10 GB. A church site is far below this.
 - **Passwords** are stored scrambled (PBKDF2 hashing in `src/password.ts`),

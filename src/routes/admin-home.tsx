@@ -27,6 +27,14 @@ routes.get("/admin", (c) => {
           <p class="muted">Add songs and upload recordings, sheet music and chord charts.</p>
         </li>
         <li>
+          <a href="/admin/powerpoints">PowerPoint archive</a>
+          <p class="muted">Upload the slides from each service so people can find them later.</p>
+        </li>
+        <li>
+          <a href="/admin/readings">Daily readings</a>
+          <p class="muted">Enter the readings for each day.</p>
+        </li>
+        <li>
           <a href="/admin/users">Member accounts</a>
           <p class="muted">Create logins for members, reset passwords, make someone an admin.</p>
         </li>
