@@ -1,0 +1,257 @@
+// ===========================================================================
+// Admin pages for songs and their files.
+//
+//   GET  /admin/songs                       list of songs
+//   GET  /admin/songs/new                   form for a new song
+//   POST /admin/songs/new                   save the new song
+//   GET  /admin/songs/:id                   edit a song and upload files
+//   POST /admin/songs/:id                   save changes to the song
+//   POST /admin/songs/:id/delete            delete the song and its files
+//   POST /admin/songs/:id/files             upload a file
+//   POST /admin/songs/:id/files/:fileId/delete
+//
+// Uploaded files go into R2. We also save a row in the song_files table
+// so we know the file's name, type and size without asking R2.
+// ===========================================================================
+
+import { Hono } from "hono";
+import {
+  addSongFile,
+  createSong,
+  deleteSong,
+  deleteSongFileRecord,
+  getSong,
+  getSongFile,
+  getSongFiles,
+  getSongs,
+  updateSong,
+  type SongDetails,
+} from "../database";
+import { FILE_KIND_LABELS, formatFileSize, getFormText } from "../helpers";
+import { requireAdmin } from "../middleware";
+import { Notice } from "../pages/layout";
+import { renderPage } from "../pages/render";
+import type { AppEnv, SongRow } from "../types";
+
+const routes = new Hono<AppEnv>();
+
+routes.use("/admin/songs", requireAdmin);
+routes.use("/admin/songs/*", requireAdmin);
+
+function readSongForm(form: Record<string, unknown>): SongDetails {
+  return {
+    title: getFormText(form, "title"),
+    author: getFormText(form, "author"),
+    songKey: getFormText(form, "songKey"),
+    ccliNumber: getFormText(form, "ccliNumber"),
+    notes: getFormText(form, "notes"),
+  };
+}
+
+function SongForm(props: { action: string; song?: SongRow; buttonText: string }) {
+  const song = props.song;
+  return (
+    <form method="post" action={props.action}>
+      <label>
+        Title
+        <input type="text" name="title" required value={song?.title ?? ""} />
+      </label>
+      <label>
+        Author / composer
+        <input type="text" name="author" value={song?.author ?? ""} />
+      </label>
+      <label>
+        Key
+        <input type="text" name="songKey" value={song?.song_key ?? ""} placeholder="e.g. G" />
+      </label>
+      <label>
+        CCLI or licence number (optional)
+        <input type="text" name="ccliNumber" value={song?.ccli_number ?? ""} />
+      </label>
+      <label>
+        Notes
+        <textarea name="notes" rows={3}>{song?.notes ?? ""}</textarea>
+      </label>
+      <button type="submit">{props.buttonText}</button>
+    </form>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// List of songs
+// ---------------------------------------------------------------------------
+routes.get("/admin/songs", async (c) => {
+  const songs = await getSongs(c.env.DB, "");
+  return renderPage(
+    c,
+    "Songs",
+    <>
+      <p><a href="/admin">Back to admin</a></p>
+      <h1>Songs</h1>
+      <p><a class="button" href="/admin/songs/new">Add a song</a></p>
+      {songs.length === 0 && <p>No songs yet.</p>}
+      <ul class="song-list">
+        {songs.map((song) => (
+          <li>
+            <a href={"/admin/songs/" + song.id}>{song.title}</a>
+            {song.author !== "" && <span class="muted"> - {song.author}</span>}
+          </li>
+        ))}
+      </ul>
+    </>,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// New song
+// ---------------------------------------------------------------------------
+routes.get("/admin/songs/new", (c) => {
+  return renderPage(
+    c,
+    "New song",
+    <section class="narrow">
+      <p><a href="/admin/songs">Back to songs</a></p>
+      <h1>New song</h1>
+      <SongForm action="/admin/songs/new" buttonText="Create song" />
+    </section>,
+  );
+});
+
+routes.post("/admin/songs/new", async (c) => {
+  const form = await c.req.parseBody();
+  const newId = await createSong(c.env.DB, readSongForm(form));
+  // Go to the edit page so the admin can upload files straight away.
+  return c.redirect("/admin/songs/" + newId + "?saved=1");
+});
+
+// ---------------------------------------------------------------------------
+// Edit a song and its files
+// ---------------------------------------------------------------------------
+routes.get("/admin/songs/:id", async (c) => {
+  const songId = Number(c.req.param("id"));
+  const song = await getSong(c.env.DB, songId);
+  if (song === null) {
+    return renderPage(c, "Not found", <p>That song doesn't exist.</p>, 404);
+  }
+  const files = await getSongFiles(c.env.DB, songId);
+  const justSaved = c.req.query("saved") === "1";
+  const base = "/admin/songs/" + songId;
+
+  return renderPage(
+    c,
+    "Edit " + song.title,
+    <>
+      <p><a href="/admin/songs">Back to songs</a> | <a href={"/music/" + songId}>View in library</a></p>
+      <h1>{song.title}</h1>
+      {justSaved && <Notice kind="success" message="Saved." />}
+
+      <section class="narrow">
+        <h2>Details</h2>
+        <SongForm action={base} song={song} buttonText="Save changes" />
+      </section>
+
+      <section>
+        <h2>Files</h2>
+        {files.length === 0 && <p>No files yet.</p>}
+        <ul class="file-list">
+          {files.map((file) => (
+            <li>
+              <strong>{FILE_KIND_LABELS[file.kind]}</strong>: <a href={"/files/" + file.id}>{file.filename}</a>{" "}
+              <span class="muted">({formatFileSize(file.size)})</span>{" "}
+              <form method="post" action={base + "/files/" + file.id + "/delete"} class="inline">
+                <button type="submit" class="link-button">Delete</button>
+              </form>
+            </li>
+          ))}
+        </ul>
+
+        <h3>Upload a file</h3>
+        <p class="muted">
+          Only upload music the church's copyright licence lets you share with members.
+        </p>
+        {/* enctype="multipart/form-data" is needed for forms that send files. */}
+        <form method="post" action={base + "/files"} enctype="multipart/form-data" class="row">
+          <select name="kind">
+            <option value="recording">Recording</option>
+            <option value="sheet">Sheet music</option>
+            <option value="chords">Chord chart</option>
+            <option value="other">Other</option>
+          </select>
+          <input type="file" name="file" required />
+          <button type="submit">Upload</button>
+        </form>
+      </section>
+
+      <section>
+        <h2>Delete this song</h2>
+        <form method="post" action={base + "/delete"} onsubmit="return confirm('Delete this song and all its files?')">
+          <button type="submit" class="danger">Delete song</button>
+        </form>
+      </section>
+    </>,
+  );
+});
+
+routes.post("/admin/songs/:id", async (c) => {
+  const songId = Number(c.req.param("id"));
+  const form = await c.req.parseBody();
+  await updateSong(c.env.DB, songId, readSongForm(form));
+  return c.redirect("/admin/songs/" + songId + "?saved=1");
+});
+
+routes.post("/admin/songs/:id/delete", async (c) => {
+  const songId = Number(c.req.param("id"));
+
+  // Delete the files from R2 first, then the song (which removes the
+  // song_files rows too).
+  const files = await getSongFiles(c.env.DB, songId);
+  for (const file of files) {
+    await c.env.MUSIC.delete(file.r2_key);
+  }
+  await deleteSong(c.env.DB, songId);
+  return c.redirect("/admin/songs");
+});
+
+// ---------------------------------------------------------------------------
+// Uploading a file
+// ---------------------------------------------------------------------------
+routes.post("/admin/songs/:id/files", async (c) => {
+  const songId = Number(c.req.param("id"));
+  const form = await c.req.parseBody();
+  const uploaded = form["file"];
+  let kind = getFormText(form, "kind");
+  if (!(kind in FILE_KIND_LABELS)) {
+    kind = "other";
+  }
+
+  // If no file was picked, "uploaded" is a string, not a File.
+  if (!(uploaded instanceof File) || uploaded.size === 0) {
+    return c.redirect("/admin/songs/" + songId);
+  }
+
+  // Where the file lives in R2, e.g. "songs/12/3f2a...-amazing-grace.pdf".
+  // The random part stops two files with the same name clashing.
+  const safeName = uploaded.name.replace(/[^a-zA-Z0-9._-]+/g, "-");
+  const r2Key = "songs/" + songId + "/" + crypto.randomUUID() + "-" + safeName;
+  const contentType = uploaded.type || "application/octet-stream";
+
+  await c.env.MUSIC.put(r2Key, uploaded.stream(), {
+    httpMetadata: { contentType: contentType },
+  });
+  await addSongFile(c.env.DB, songId, kind, r2Key, uploaded.name, contentType, uploaded.size);
+
+  return c.redirect("/admin/songs/" + songId + "?saved=1");
+});
+
+routes.post("/admin/songs/:id/files/:fileId/delete", async (c) => {
+  const songId = Number(c.req.param("id"));
+  const fileId = Number(c.req.param("fileId"));
+  const file = await getSongFile(c.env.DB, fileId);
+  if (file !== null) {
+    await c.env.MUSIC.delete(file.r2_key);
+    await deleteSongFileRecord(c.env.DB, fileId);
+  }
+  return c.redirect("/admin/songs/" + songId);
+});
+
+export default routes;

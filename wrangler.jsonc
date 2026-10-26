@@ -1,0 +1,34 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "church-site",
+  "main": "src/index.tsx",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // Static files in ./public (CSS, images, logo) are served for free
+  // before the Worker runs.
+  "assets": { "directory": "./public" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "church-db",
+      // Replace with the id printed by `npx wrangler d1 create church-db`
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    { "binding": "MUSIC", "bucket_name": "church-music" }
+  ],
+  "vars": {
+    "CHURCH_NAME": "Our Church",
+    // "members" = only logged-in members can see and download music.
+    // "public"  = anyone can browse and download music.
+    "MUSIC_ACCESS": "members",
+    // Used for "upcoming" event lists.
+    "TIMEZONE": "Pacific/Auckland"
+  }
+  // Secrets (set with `npx wrangler secret put NAME`, never put them here):
+  //   BETTER_AUTH_SECRET  random string, 32+ characters
+  //   BETTER_AUTH_URL     e.g. https://yourchurch.nz
+  //   SETUP_TOKEN         one-time code used to create the first admin account
+}
