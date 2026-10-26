@@ -87,24 +87,25 @@ routes.get("/music/:id", async (c) => {
 
       {files.length === 0 && <p>No files uploaded yet.</p>}
 
-      {/* One section per kind of resource, each only shown if it has files. */}
-      {FILE_SECTIONS.map((section) => {
-        const filesInSection = files.filter((file) => file.kind === section.kind);
-        if (filesInSection.length === 0) {
-          return null;
-        }
-        return (
-          <section>
-            <h2>{section.heading}</h2>
-            {section.help !== "" && <p class="muted">{section.help}</p>}
-            <ul class="file-list">
-              {filesInSection.map((file) => (
-                <SongFileItem file={file} siteAddress={siteAddress(c)} />
-              ))}
-            </ul>
-          </section>
-        );
-      })}
+      {/*
+        Each kind of resource gets its own dropdown (<details>), so you can
+        open just the one you need. The first one starts open.
+        Kinds with no files are left out.
+      */}
+      {sectionsWithFiles(files).map((section, index) => (
+        <details class="file-section" open={index === 0}>
+          <summary>
+            <span class="file-section-heading">{section.heading}</span>
+            <span class="count-pill">{section.files.length}</span>
+          </summary>
+          {section.help !== "" && <p class="muted">{section.help}</p>}
+          <ul class="file-list">
+            {section.files.map((file) => (
+              <SongFileItem file={file} siteAddress={siteAddress(c)} />
+            ))}
+          </ul>
+        </details>
+      ))}
     </>,
   );
 });
@@ -121,6 +122,18 @@ const FILE_SECTIONS = [
   { kind: "recording", heading: "Recordings", help: "" },
   { kind: "other", heading: "Other files", help: "" },
 ];
+
+/** The sections that have at least one file, each with its list of files. */
+function sectionsWithFiles(files: SongFileRow[]) {
+  const result = [];
+  for (const section of FILE_SECTIONS) {
+    const filesInSection = files.filter((file) => file.kind === section.kind);
+    if (filesInSection.length > 0) {
+      result.push({ ...section, files: filesInSection });
+    }
+  }
+  return result;
+}
 
 /** This site's address, e.g. "https://ourchoir.nz". */
 function siteAddress(c: Context<AppEnv>): string {
