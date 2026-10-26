@@ -1,17 +1,23 @@
-# Church Website
+# Choir Website
 
-A website for the church's events, daily readings, volunteer rosters, set
-lists, music files and PowerPoint archive. It runs on Cloudflare for free
-(apart from the yearly domain fee).
+A website for a choir that sings at several parishes. It has a calendar of
+where the choir is singing, what it will sing at each Mass (with sheet music
+and YouTube links anyone can open), daily readings, a music library and a
+PowerPoint archive. It runs on Cloudflare for free (apart from the yearly
+domain fee).
 
-- **Everyone** can see the home page, events, daily readings, the music
-  library, the PowerPoint archive, rosters and set lists.
-- **Admins** log in to add events, readings, songs, files, PowerPoints and
-  member accounts.
+- **Everyone** can see the calendar, each event's set list with its sheet
+  music and YouTube links, and the daily readings. Share an event's page so
+  people know what the choir will sing.
+- **Choir members** can also see the music library (recordings too), the
+  PowerPoint archive, rosters and members-only events like rehearsals.
+- **Admins** log in to add parishes, events, set lists, songs, files,
+  PowerPoints and member accounts.
 
-Right now everything is open to everyone. To make the music, PowerPoints,
-rosters, set lists and members-only events need a login, change
-`EVERYTHING_PUBLIC` to `"no"` (see Part 2).
+Right now everything is open to everyone. To make the music library,
+PowerPoints, rosters and members-only events need a login, change
+`EVERYTHING_PUBLIC` to `"no"` (see Part 2). Set lists, sheet music and
+chord charts stay public either way.
 
 Nobody can sign themselves up. An admin creates each account.
 
@@ -38,7 +44,7 @@ you already know.
                  ├── src/index.tsx        works out who is logged in,
                  │                        then picks the right page
                  ├── src/routes/*.tsx     builds the page
-                 │      ├── D1 database   events, songs, users  (like SQLite)
+                 │      ├── D1 database   parishes, events, songs, users  (like SQLite)
                  │      └── R2 storage    the actual music files (like a folder)
                  ▼
           HTML page sent back to the browser
@@ -79,16 +85,16 @@ system.
 ### Where everything is
 
 ```
-church-site/
+choir-site/
 ├── README.md               ← you are here
 ├── package.json            list of libraries (like requirements.txt)
-├── wrangler.jsonc          Cloudflare settings: database, storage, church name
+├── wrangler.jsonc          Cloudflare settings: database, storage, choir name
 ├── tsconfig.json           TypeScript settings (you can ignore this)
 ├── .dev.vars.example       example secrets for running on your own computer
 │
 ├── migrations/             SQL that creates the database tables
 │   ├── 0001_auth.sql       login tables (used by Better Auth)
-│   ├── 0002_church.sql     events, songs, files, rosters, set lists
+│   ├── 0002_choir.sql      parishes, events, songs, files, rosters, set lists
 │   └── 0003_powerpoints_and_readings.sql
 │
 ├── public/                 plain files sent as-is
@@ -108,14 +114,15 @@ church-site/
     │   ├── layout.tsx      header, menu and footer around every page
     │   └── render.tsx      shortcut to show a page inside the layout
     └── routes/             one file per area of the site
-        ├── public-pages.tsx   home page, events list, one event
+        ├── public-pages.tsx   home page, calendar, one event with its set list
         ├── login.tsx          log in, log out, first-time setup
         ├── account.tsx        change your own password
         ├── music.tsx          music library and file downloads
         ├── powerpoints.tsx    PowerPoint archive
         ├── readings.tsx       readings for each day
         ├── admin-home.tsx     admin dashboard
-        ├── admin-events.tsx   add/edit events, rosters, set lists
+        ├── admin-events.tsx   add/edit events, set lists, rosters
+        ├── admin-parishes.tsx the parishes the choir sings at
         ├── admin-songs.tsx    add/edit songs, upload files
         ├── admin-users.tsx    create and manage member accounts
         ├── admin-powerpoints.tsx  upload and delete PowerPoints
@@ -124,7 +131,7 @@ church-site/
 
 ### Following one request through the code
 
-Say a member opens `https://yourchurch.nz/events/5`:
+Say a member opens `https://ourchoir.nz/events/5`:
 
 1. `src/index.tsx` runs. `loadUser` (in `middleware.ts`) reads their login
    cookie and asks Better Auth who they are.
@@ -143,14 +150,14 @@ All in **`wrangler.jsonc`**, under `"vars"`:
 
 | Setting | What it does |
 | --- | --- |
-| `CHURCH_NAME` | Shown in the header, footer and page titles. |
-| `EVERYTHING_PUBLIC` | `"yes"` (now): everyone can see music, PowerPoints, rosters, set lists and members-only events. `"no"`: only logged-in members can. Admin pages always need an admin login. |
+| `CHOIR_NAME` | Shown in the header, footer and page titles. |
+| `EVERYTHING_PUBLIC` | `"yes"` (now): everyone can see the music library, recordings, PowerPoints, rosters and members-only events. `"no"`: only logged-in members can. Set lists, sheet music and chord charts are always public. Admin pages always need an admin login. |
 | `TIMEZONE` | Used to decide which events are "upcoming". `Pacific/Auckland` for New Zealand. |
 
 Other things to personalise:
 
 - **Colours:** top of `public/styles.css`.
-- **Welcome text, address, service times:** `src/routes/public-pages.tsx`
+- **Welcome text:** `src/routes/public-pages.tsx`
   (look for the `TODO` comments).
 - **Readings page:** laid out like the USCCB daily readings. The readings
   fill in by themselves from [Universalis](https://universalis.com/n-jsonp.htm):
@@ -217,7 +224,7 @@ the free allowance (10 GB). In the Cloudflare dashboard go to
 ### 5. Create the database
 
 ```
-npx wrangler d1 create church-db
+npx wrangler d1 create choir-db
 ```
 
 It prints a block that includes a line like:
@@ -231,7 +238,7 @@ Copy that id into `wrangler.jsonc`, replacing `REPLACE_WITH_YOUR_D1_DATABASE_ID`
 ### 6. Create the music storage bucket
 
 ```
-npx wrangler r2 bucket create church-music
+npx wrangler r2 bucket create choir-music
 ```
 
 ### 7. Create the tables
@@ -256,7 +263,7 @@ A long random string. You can make one with:
 ```
 npx wrangler secret put BETTER_AUTH_URL
 ```
-The site's address. Use your real domain, e.g. `https://yourchurch.nz`.
+The site's address. Use your real domain, e.g. `https://ourchoir.nz`.
 (If you are trying it on the free `*.workers.dev` address first, use that,
 and set this again once your domain is attached.)
 
@@ -271,25 +278,26 @@ A one-time code you make up. You will type it on the setup page in step 11.
 npm run deploy
 ```
 
-It prints the address, like `https://church-site.yourname.workers.dev`.
+It prints the address, like `https://choir-site.yourname.workers.dev`.
 **Run this again any time you change the code.**
 
 ### 10. Attach your domain
 
-In the Cloudflare dashboard: **Workers & Pages** → **church-site** →
+In the Cloudflare dashboard: **Workers & Pages** → **choir-site** →
 **Settings** → **Domains & Routes** → **Add** → **Custom domain**, and enter
-your domain (e.g. `yourchurch.nz` or `www.yourchurch.nz`). Because the domain
+your domain (e.g. `ourchoir.nz` or `www.ourchoir.nz`). Because the domain
 is already on Cloudflare, DNS and HTTPS are set up for you.
 
 Make sure `BETTER_AUTH_URL` (step 8) matches this address exactly.
 
 ### 11. Create your admin account
 
-Visit `https://yourchurch.nz/setup`, enter the `SETUP_TOKEN` code, your
+Visit `https://ourchoir.nz/setup`, enter the `SETUP_TOKEN` code, your
 name, email and a password. This page switches itself off once any account
 exists.
 
-Then log in, open **Admin**, and add events, songs and member accounts.
+Then log in, open **Admin**, and add your parishes first, then songs
+(with their YouTube links and sheet music), events and member accounts.
 
 ---
 
@@ -321,17 +329,17 @@ like `migrations/0003_add_something.sql` with the change (e.g.
 
 ## Things to keep in mind
 
-- **Copyright:** a church copyright licence usually covers sharing within the
-  congregation, not posting publicly. While `EVERYTHING_PUBLIC` is `"yes"`,
-  anyone on the internet can download the music and PowerPoints, so only
-  upload copyrighted songs once you switch it to `"no"`. The same goes for
-  typing the full text of the readings: Bible translations are copyrighted,
-  so the readings page shows references and links to Universalis for the
-  full texts.
+- **Copyright:** uploaded sheet music and chord charts are linked from the
+  public set lists, so anyone can download them. Only upload sheets you are
+  allowed to share publicly (for example public-domain hymns, or ones your
+  licence covers). For other songs, use the "Sheet music link" box to point
+  to where the publisher sells or shares it. While `EVERYTHING_PUBLIC` is
+  `"yes"`, recordings and PowerPoints are public too. The same goes for
+  typing the full text of the readings: Bible translations are copyrighted.
 - **Privacy:** rosters contain people's names, which is personal information
   under the NZ Privacy Act 2020. While `EVERYTHING_PUBLIC` is `"yes"`,
   anyone can see them.
 - **Free limits:** D1 allows 5 million reads and 100,000 writes a day on the
-  free plan, and R2 allows 10 GB. A church site is far below this.
+  free plan, and R2 allows 10 GB. A choir site is far below this.
 - **Passwords** are stored scrambled (PBKDF2 hashing in `src/password.ts`),
   never as plain text.

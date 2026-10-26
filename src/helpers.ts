@@ -12,7 +12,7 @@ import type { AppEnv } from "./types";
 // ---------------------------------------------------------------------------
 
 /**
- * Returns today's date in the church's time zone, like "2026-10-26".
+ * Returns today's date in the choir's time zone, like "2026-10-26".
  * We use it to decide which events are "upcoming".
  */
 export function getTodaysDate(timeZone: string): string {
@@ -155,6 +155,18 @@ export function getFormText(form: Record<string, unknown>, name: string): string
   const value = form[name];
   if (typeof value === "string") {
     return value.trim();
+  }
+  return "";
+}
+
+/**
+ * Only keeps web links that start with http:// or https://.
+ * (This stops someone saving a harmful "javascript:" link.)
+ * Returns "" for anything else.
+ */
+export function cleanWebLink(link: string): string {
+  if (link.startsWith("https://") || link.startsWith("http://")) {
+    return link;
   }
   return "";
 }

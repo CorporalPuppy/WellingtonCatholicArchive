@@ -15,7 +15,7 @@ export function renderPage(c: Context<AppEnv>, title: string, content: Child, st
       {raw("<!doctype html>")}
       <Layout
         title={title}
-        churchName={c.env.CHURCH_NAME}
+        choirName={c.env.CHOIR_NAME}
         user={c.get("user")}
         showMemberLinks={canSeeMemberPages(c)}
       >

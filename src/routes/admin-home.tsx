@@ -19,12 +19,16 @@ routes.get("/admin", (c) => {
       <h1>Admin</h1>
       <ul class="admin-menu">
         <li>
-          <a href="/admin/events">Events, rosters and set lists</a>
-          <p class="muted">Add services and events, who is on the roster, and which songs are sung.</p>
+          <a href="/admin/events">Events, set lists and rosters</a>
+          <p class="muted">Add Masses and rehearsals, choose the songs, and say who is singing.</p>
+        </li>
+        <li>
+          <a href="/admin/parishes">Parishes</a>
+          <p class="muted">The parishes the choir sings at, with their addresses.</p>
         </li>
         <li>
           <a href="/admin/songs">Songs and music files</a>
-          <p class="muted">Add songs and upload recordings, sheet music and chord charts.</p>
+          <p class="muted">Add songs, YouTube links, sheet music, chord charts and recordings.</p>
         </li>
         <li>
           <a href="/admin/powerpoints">PowerPoint archive</a>
@@ -36,7 +40,7 @@ routes.get("/admin", (c) => {
         </li>
         <li>
           <a href="/admin/users">Member accounts</a>
-          <p class="muted">Create logins for members, reset passwords, make someone an admin.</p>
+          <p class="muted">Create logins for choir members, reset passwords, make someone an admin.</p>
         </li>
       </ul>
     </>,

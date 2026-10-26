@@ -241,3 +241,46 @@ fieldset.reading-fields legend { font-weight: bold; color: var(--main-colour); p
 /* Readings from Universalis arrive as ready-made HTML. */
 .reading-html { font-size: 1.1rem; line-height: 1.75; }
 .readings-copyright { text-align: center; font-size: 0.85rem; margin-top: 24px; }
+
+/* ---- Calendar and set lists ---- */
+
+.month-heading {
+  border-bottom: 2px solid var(--accent-colour);
+  padding-bottom: 4px;
+  margin-top: 32px;
+}
+
+.setlist { padding-left: 24px; }
+.setlist li { margin-bottom: 14px; }
+.setlist-part { color: var(--muted-text-colour); }
+
+/* Small pill-shaped links: Sheet music, Chord chart, YouTube. */
+.setlist-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.setlist-links a {
+  font-size: 0.9rem;
+  border: 1px solid var(--border-colour);
+  background: var(--card-colour);
+  border-radius: 999px;
+  padding: 2px 12px;
+  text-decoration: none;
+}
+
+.card {
+  background: var(--card-colour);
+  border: 1px solid var(--border-colour);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+}
+
+form input[type="url"] {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px;
+  font: inherit;
+  font-weight: normal;
+  border: 1px solid var(--border-colour);
+  border-radius: 4px;
+  background: white;
+}

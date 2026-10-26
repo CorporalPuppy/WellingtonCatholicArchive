@@ -8,7 +8,7 @@
 
 import { Hono } from "hono";
 import { getSong, getSongFile, getSongFiles, getSongs } from "../database";
-import { FILE_KIND_LABELS, formatFileSize } from "../helpers";
+import { canSeeMemberPages, FILE_KIND_LABELS, formatFileSize } from "../helpers";
 import { sendFileFromStorage } from "../files";
 import { requireMemberAccess } from "../middleware";
 import { renderPage } from "../pages/render";
@@ -19,7 +19,7 @@ const routes = new Hono<AppEnv>();
 // Check the visitor is allowed in before any page in this file.
 routes.use("/music", requireMemberAccess);
 routes.use("/music/*", requireMemberAccess);
-routes.use("/files/*", requireMemberAccess);
+// (Files check access themselves: see /files/:id below.)
 
 // ---------------------------------------------------------------------------
 // List of songs, with a search box: GET /music?search=amazing
@@ -72,6 +72,16 @@ routes.get("/music/:id", async (c) => {
       {song.song_key !== "" && <p>Key: {song.song_key}</p>}
       {song.ccli_number !== "" && <p class="muted">CCLI song number: {song.ccli_number}</p>}
       {song.notes !== "" && <p>{song.notes}</p>}
+      {(song.youtube_url !== "" || song.sheet_music_url !== "") && (
+        <p class="setlist-links">
+          {song.youtube_url !== "" && (
+            <a href={song.youtube_url} target="_blank" rel="noopener">Listen on YouTube</a>
+          )}
+          {song.sheet_music_url !== "" && (
+            <a href={song.sheet_music_url} target="_blank" rel="noopener">Sheet music (external)</a>
+          )}
+        </p>
+      )}
 
       <h2>Files</h2>
       {files.length === 0 && <p>No files uploaded yet.</p>}
@@ -111,12 +121,21 @@ function SongFileItem(props: { file: SongFileRow }) {
 // Sending a file from R2 to the browser: GET /files/45
 //
 // Add ?download=1 to save the file instead of opening it.
+//
+// Sheet music and chord charts are always public, because set lists link
+// to them so anyone can see what the choir will sing. Recordings and other
+// files follow EVERYTHING_PUBLIC like the rest of the music library.
 // ---------------------------------------------------------------------------
 routes.get("/files/:id", async (c) => {
   const fileId = Number(c.req.param("id"));
   const file = await getSongFile(c.env.DB, fileId);
   if (file === null) {
     return c.text("File not found", 404);
+  }
+
+  const isSheetMusic = file.kind === "sheet" || file.kind === "chords";
+  if (!isSheetMusic && !canSeeMemberPages(c)) {
+    return c.redirect("/login?next=" + encodeURIComponent(c.req.path));
   }
 
   return await sendFileFromStorage(c, file.r2_key, file.filename, file.content_type);

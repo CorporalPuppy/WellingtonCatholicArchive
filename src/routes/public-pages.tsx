@@ -1,14 +1,17 @@
 // ===========================================================================
-// Pages anyone can see: the home page and the events calendar.
-// Members (or everyone, if EVERYTHING_PUBLIC is "yes") also see
-// members-only events, rosters and set lists.
+// Pages anyone can see: the home page, the calendar, and each event.
+//
+// Each event's set list ("what we'll sing") is always public, with links to
+// the sheet music and YouTube recordings, so anyone can see what the choir
+// is singing. Rosters and members-only events are shown to members (or to
+// everyone, while EVERYTHING_PUBLIC is "yes").
 // ===========================================================================
 
 import { Hono } from "hono";
-import { getEvent, getRoster, getSetlist, getUpcomingEvents } from "../database";
-import { canSeeMemberPages, formatEventTime, getTodaysDate } from "../helpers";
+import { getEvent, getParishes, getRoster, getSetlist, getSheetFilesForEvent, getUpcomingEvents } from "../database";
+import { canSeeMemberPages, FILE_KIND_LABELS, formatEventTime, getTodaysDate } from "../helpers";
 import { renderPage } from "../pages/render";
-import type { AppEnv, EventRow } from "../types";
+import type { AppEnv, EventRow, SetlistRow, SongFileRow } from "../types";
 
 const routes = new Hono<AppEnv>();
 
@@ -17,7 +20,7 @@ const routes = new Hono<AppEnv>();
 // ---------------------------------------------------------------------------
 routes.get("/", async (c) => {
   const today = getTodaysDate(c.env.TIMEZONE);
-  const events = await getUpcomingEvents(c.env.DB, today, canSeeMemberPages(c));
+  const events = await getUpcomingEvents(c.env.DB, today, canSeeMemberPages(c), null);
   const nextFewEvents = events.slice(0, 3);
 
   return renderPage(
@@ -25,47 +28,103 @@ routes.get("/", async (c) => {
     "Welcome",
     <>
       <section class="hero">
-        <h1>Welcome to {c.env.CHURCH_NAME}</h1>
-        {/* TODO: replace this placeholder text with the church's own welcome. */}
+        <h1>{c.env.CHOIR_NAME}</h1>
+        {/* TODO: replace this placeholder text with the choir's own welcome. */}
         <p>
-          A short welcome message goes here: who we are, when we meet, and how
-          to find us.
+          A short welcome goes here: who the choir is, which parishes we sing
+          at, and how to join.
         </p>
       </section>
 
       <section>
-        <h2>Coming up</h2>
+        <h2>Where we're singing next</h2>
         <EventList events={nextFewEvents} />
         <p>
-          <a href="/events">See all events</a>
+          <a href="/events">See the full calendar</a>
         </p>
       </section>
 
       <section>
-        <h2>Visit us</h2>
-        {/* TODO: replace with the real address and service times. */}
-        <p>Address, service times and contact details go here.</p>
+        <h2>For singers</h2>
+        <p>
+          <a href="/readings">Today's readings</a> - <a href="/music">Music library</a>
+        </p>
       </section>
     </>,
   );
 });
 
 // ---------------------------------------------------------------------------
-// Events calendar: GET /events
+// The calendar: GET /events  or  /events?parish=3
+// Upcoming events grouped by month, with a menu to show one parish only.
 // ---------------------------------------------------------------------------
 routes.get("/events", async (c) => {
   const today = getTodaysDate(c.env.TIMEZONE);
-  const events = await getUpcomingEvents(c.env.DB, today, canSeeMemberPages(c));
+  const parishes = await getParishes(c.env.DB);
+
+  // Which parish was picked in the menu ("" means every parish).
+  const parishChoice = c.req.query("parish") ?? "";
+  const parishId = parishChoice === "" ? null : Number(parishChoice);
+
+  const events = await getUpcomingEvents(c.env.DB, today, canSeeMemberPages(c), parishId);
 
   return renderPage(
     c,
-    "Events",
+    "Calendar",
     <>
-      <h1>Upcoming events</h1>
-      <EventList events={events} />
+      <h1>Calendar</h1>
+
+      {parishes.length > 0 && (
+        <form method="get" action="/events" class="search">
+          <select name="parish" aria-label="Parish">
+            <option value="">All parishes</option>
+            {parishes.map((parish) => (
+              <option value={String(parish.id)} selected={parish.id === parishId}>
+                {parish.name}
+              </option>
+            ))}
+          </select>
+          <button type="submit">Show</button>
+        </form>
+      )}
+
+      {events.length === 0 && <p>No upcoming events.</p>}
+
+      {groupByMonth(events).map((month) => (
+        <section>
+          <h2 class="month-heading">{month.name}</h2>
+          <EventList events={month.events} />
+        </section>
+      ))}
     </>,
   );
 });
+
+/**
+ * Splits a list of events (already in date order) into months:
+ * [{ name: "November 2026", events: [...] }, ...]
+ */
+function groupByMonth(events: EventRow[]): { name: string; events: EventRow[] }[] {
+  const months: { name: string; events: EventRow[] }[] = [];
+  for (const event of events) {
+    const name = monthName(event.starts_at);
+    const lastMonth = months[months.length - 1];
+    if (lastMonth !== undefined && lastMonth.name === name) {
+      lastMonth.events.push(event);
+    } else {
+      months.push({ name: name, events: [event] });
+    }
+  }
+  return months;
+}
+
+/** "2026-11-01T10:00" -> "November 2026" */
+function monthName(localTime: string): string {
+  const year = Number(localTime.slice(0, 4));
+  const month = Number(localTime.slice(5, 7));
+  const formatter = new Intl.DateTimeFormat("en-NZ", { timeZone: "UTC", month: "long", year: "numeric" });
+  return formatter.format(new Date(Date.UTC(year, month - 1, 1)));
+}
 
 // ---------------------------------------------------------------------------
 // One event: GET /events/123
@@ -80,14 +139,15 @@ routes.get("/events/:id", async (c) => {
     return renderPage(c, "Not found", <p>Sorry, we couldn't find that event.</p>, 404);
   }
 
+  const setlist = await getSetlist(c.env.DB, eventId);
+  const sheetFiles = await getSheetFilesForEvent(c.env.DB, eventId);
+
   // Rosters contain people's names, so normally only members see them.
   let roster = null;
-  let setlist = null;
   if (canSeeMemberPages(c)) {
     roster = await getRoster(c.env.DB, eventId);
-    setlist = await getSetlist(c.env.DB, eventId);
   }
-  const linkSongs = canSeeMemberPages(c);
+  const linkToMusicLibrary = canSeeMemberPages(c);
 
   return renderPage(
     c,
@@ -95,24 +155,22 @@ routes.get("/events/:id", async (c) => {
     <>
       <h1>{event.title}</h1>
       <p class="event-when">{formatEventTime(event.starts_at)}</p>
-      {event.location !== "" && <p class="event-where">{event.location}</p>}
+      <EventPlace event={event} />
       {event.description !== "" && <p class="event-description">{event.description}</p>}
 
-      {setlist !== null && (
-        <section>
-          <h2>Set list</h2>
-          {setlist.length === 0 && <p>No songs added yet.</p>}
-          <ol>
-            {setlist.map((item) => (
-              <li>
-                {linkSongs ? <a href={"/music/" + item.song_id}>{item.title}</a> : item.title}
-                {item.song_key !== "" && <span class="muted"> (key of {item.song_key})</span>}
-                {item.notes !== "" && <span class="muted"> - {item.notes}</span>}
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
+      <section>
+        <h2>What we'll sing</h2>
+        {setlist.length === 0 && <p>The songs haven't been chosen yet.</p>}
+        <ol class="setlist">
+          {setlist.map((item) => (
+            <SetlistItem item={item} sheetFiles={sheetFiles} linkToMusicLibrary={linkToMusicLibrary} />
+          ))}
+        </ol>
+        {/* A button that copies this page's address, to paste into a message. */}
+        <button type="button" onclick="navigator.clipboard.writeText(location.href); this.textContent = 'Link copied';">
+          Copy link to share
+        </button>
+      </section>
 
       {roster !== null && (
         <section>
@@ -135,8 +193,65 @@ routes.get("/events/:id", async (c) => {
   );
 });
 
+/** The parish (with a map link) and any extra location details. */
+function EventPlace(props: { event: EventRow }) {
+  const event = props.event;
+  const mapLink =
+    "https://www.google.com/maps/search/?api=1&query=" +
+    encodeURIComponent(event.parish_address || event.parish_name || "");
+  return (
+    <>
+      {event.parish_name !== null && (
+        <p class="event-where">
+          <strong>{event.parish_name}</strong>
+          {event.parish_address !== null && event.parish_address !== "" && (
+            <>
+              <br />
+              {event.parish_address} (<a href={mapLink} target="_blank" rel="noopener">map</a>)
+            </>
+          )}
+        </p>
+      )}
+      {event.location !== "" && <p class="event-where">{event.location}</p>}
+    </>
+  );
+}
+
+/** One song in the set list, with its sheet music and YouTube links. */
+function SetlistItem(props: { item: SetlistRow; sheetFiles: SongFileRow[]; linkToMusicLibrary: boolean }) {
+  const item = props.item;
+  const filesForThisSong = props.sheetFiles.filter((file) => file.song_id === item.song_id);
+
+  return (
+    <li>
+      {item.notes !== "" && <span class="setlist-part">{item.notes}: </span>}
+      {props.linkToMusicLibrary ? <a href={"/music/" + item.song_id}><strong>{item.title}</strong></a> : <strong>{item.title}</strong>}
+      {item.author !== "" && <span class="muted"> - {item.author}</span>}
+      {item.song_key !== "" && <span class="muted"> (key of {item.song_key})</span>}
+
+      <div class="setlist-links">
+        {filesForThisSong.map((file) => (
+          <a href={"/files/" + file.id} target="_blank">
+            {FILE_KIND_LABELS[file.kind]}
+          </a>
+        ))}
+        {item.sheet_music_url !== "" && (
+          <a href={item.sheet_music_url} target="_blank" rel="noopener">
+            Sheet music (external)
+          </a>
+        )}
+        {item.youtube_url !== "" && (
+          <a href={item.youtube_url} target="_blank" rel="noopener">
+            YouTube
+          </a>
+        )}
+      </div>
+    </li>
+  );
+}
+
 // ---------------------------------------------------------------------------
-// A list of events, used on the home page and the events page.
+// A list of events, used on the home page and the calendar.
 // ---------------------------------------------------------------------------
 function EventList(props: { events: EventRow[] }) {
   if (props.events.length === 0) {
@@ -152,7 +267,8 @@ function EventList(props: { events: EventRow[] }) {
           <br />
           <span class="muted">
             {formatEventTime(event.starts_at)}
-            {event.location !== "" && " - " + event.location}
+            {event.parish_name !== null && " - " + event.parish_name}
+            {event.parish_name === null && event.location !== "" && " - " + event.location}
             {event.is_public === 0 && " - members only"}
           </span>
         </li>

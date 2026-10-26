@@ -44,7 +44,7 @@ function LoginForm(props: { next: string; error?: string }) {
         </label>
         <button type="submit">Log in</button>
       </form>
-      <p class="muted">Accounts are made by the church admin. Ask them if you need one.</p>
+      <p class="muted">Accounts are made by the choir admin. Ask them if you need one.</p>
     </section>
   );
 }

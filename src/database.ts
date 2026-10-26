@@ -4,36 +4,90 @@
 //
 // The tables are created by the files in the /migrations folder.
 
-import type { EventRow, PowerpointRow, ReadingsRow, RosterRow, SetlistRow, SongFileRow, SongRow } from "./types";
+import type { EventRow, ParishRow, PowerpointRow, ReadingsRow, RosterRow, SetlistRow, SongFileRow, SongRow } from "./types";
+
+// ===========================================================================
+// Parishes (the churches the choir sings at)
+// ===========================================================================
+
+export async function getParishes(db: D1Database): Promise<ParishRow[]> {
+  const result = await db.prepare("SELECT * FROM parishes ORDER BY name COLLATE NOCASE").all<ParishRow>();
+  return result.results;
+}
+
+export async function getParish(db: D1Database, parishId: number): Promise<ParishRow | null> {
+  return await db.prepare("SELECT * FROM parishes WHERE id = ?").bind(parishId).first<ParishRow>();
+}
+
+export async function createParish(db: D1Database, name: string, address: string, notes: string): Promise<void> {
+  await db.prepare("INSERT INTO parishes (name, address, notes) VALUES (?, ?, ?)").bind(name, address, notes).run();
+}
+
+export async function updateParish(db: D1Database, parishId: number, name: string, address: string, notes: string): Promise<void> {
+  await db
+    .prepare("UPDATE parishes SET name = ?, address = ?, notes = ? WHERE id = ?")
+    .bind(name, address, notes, parishId)
+    .run();
+}
+
+export async function deleteParish(db: D1Database, parishId: number): Promise<void> {
+  // Events at this parish are kept; they just lose their parish
+  // (see "ON DELETE SET NULL" in the migrations).
+  await db.prepare("DELETE FROM parishes WHERE id = ?").bind(parishId).run();
+}
 
 // ===========================================================================
 // Events
 // ===========================================================================
 
-/** Events from today onwards, soonest first. */
-export async function getUpcomingEvents(db: D1Database, today: string, includePrivate: boolean): Promise<EventRow[]> {
-  let sql = "SELECT * FROM events WHERE starts_at >= ?";
+// Every event query starts like this, so each event comes with the name
+// and address of its parish (LEFT JOIN = keep events that have no parish).
+const SELECT_EVENTS = `
+  SELECT events.*, parishes.name AS parish_name, parishes.address AS parish_address
+  FROM events
+  LEFT JOIN parishes ON parishes.id = events.parish_id`;
+
+/**
+ * Events from today onwards, soonest first.
+ * includePrivate: also include members-only events.
+ * parishId: only events at this parish (or null for every parish).
+ */
+export async function getUpcomingEvents(
+  db: D1Database,
+  today: string,
+  includePrivate: boolean,
+  parishId: number | null,
+): Promise<EventRow[]> {
+  let sql = SELECT_EVENTS + " WHERE events.starts_at >= ?";
+  const values: (string | number)[] = [today];
+
   if (!includePrivate) {
-    sql = sql + " AND is_public = 1";
+    sql = sql + " AND events.is_public = 1";
   }
-  sql = sql + " ORDER BY starts_at";
-  const result = await db.prepare(sql).bind(today).all<EventRow>();
+  if (parishId !== null) {
+    sql = sql + " AND events.parish_id = ?";
+    values.push(parishId);
+  }
+  sql = sql + " ORDER BY events.starts_at";
+
+  const result = await db.prepare(sql).bind(...values).all<EventRow>();
   return result.results;
 }
 
 /** Every event, newest first (for the admin pages). */
 export async function getAllEvents(db: D1Database): Promise<EventRow[]> {
-  const result = await db.prepare("SELECT * FROM events ORDER BY starts_at DESC").all<EventRow>();
+  const result = await db.prepare(SELECT_EVENTS + " ORDER BY events.starts_at DESC").all<EventRow>();
   return result.results;
 }
 
 export async function getEvent(db: D1Database, eventId: number): Promise<EventRow | null> {
-  return await db.prepare("SELECT * FROM events WHERE id = ?").bind(eventId).first<EventRow>();
+  return await db.prepare(SELECT_EVENTS + " WHERE events.id = ?").bind(eventId).first<EventRow>();
 }
 
 export type EventDetails = {
   title: string;
   description: string;
+  parishId: number | null;
   location: string;
   startsAt: string;
   endsAt: string;
@@ -44,9 +98,18 @@ export type EventDetails = {
 export async function createEvent(db: D1Database, event: EventDetails): Promise<number> {
   const row = await db
     .prepare(
-      "INSERT INTO events (title, description, location, starts_at, ends_at, is_public) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+      `INSERT INTO events (title, description, parish_id, location, starts_at, ends_at, is_public)
+       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
     )
-    .bind(event.title, event.description, event.location, event.startsAt, event.endsAt || null, event.isPublic ? 1 : 0)
+    .bind(
+      event.title,
+      event.description,
+      event.parishId,
+      event.location,
+      event.startsAt,
+      event.endsAt || null,
+      event.isPublic ? 1 : 0,
+    )
     .first<{ id: number }>();
   return row!.id;
 }
@@ -54,9 +117,20 @@ export async function createEvent(db: D1Database, event: EventDetails): Promise<
 export async function updateEvent(db: D1Database, eventId: number, event: EventDetails): Promise<void> {
   await db
     .prepare(
-      "UPDATE events SET title = ?, description = ?, location = ?, starts_at = ?, ends_at = ?, is_public = ? WHERE id = ?",
+      `UPDATE events
+       SET title = ?, description = ?, parish_id = ?, location = ?, starts_at = ?, ends_at = ?, is_public = ?
+       WHERE id = ?`,
     )
-    .bind(event.title, event.description, event.location, event.startsAt, event.endsAt || null, event.isPublic ? 1 : 0, eventId)
+    .bind(
+      event.title,
+      event.description,
+      event.parishId,
+      event.location,
+      event.startsAt,
+      event.endsAt || null,
+      event.isPublic ? 1 : 0,
+      eventId,
+    )
     .run();
 }
 
@@ -96,7 +170,7 @@ export async function deleteRosterEntry(db: D1Database, entryId: number): Promis
 export async function getSetlist(db: D1Database, eventId: number): Promise<SetlistRow[]> {
   const result = await db
     .prepare(
-      `SELECT setlist_items.*, songs.title, songs.song_key
+      `SELECT setlist_items.*, songs.title, songs.author, songs.song_key, songs.youtube_url, songs.sheet_music_url
        FROM setlist_items
        JOIN songs ON songs.id = setlist_items.song_id
        WHERE setlist_items.event_id = ?
@@ -153,20 +227,29 @@ export type SongDetails = {
   songKey: string;
   ccliNumber: string;
   notes: string;
+  youtubeUrl: string;
+  sheetMusicUrl: string;
 };
 
 export async function createSong(db: D1Database, song: SongDetails): Promise<number> {
   const row = await db
-    .prepare("INSERT INTO songs (title, author, song_key, ccli_number, notes) VALUES (?, ?, ?, ?, ?) RETURNING id")
-    .bind(song.title, song.author, song.songKey, song.ccliNumber, song.notes)
+    .prepare(
+      `INSERT INTO songs (title, author, song_key, ccli_number, notes, youtube_url, sheet_music_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+    )
+    .bind(song.title, song.author, song.songKey, song.ccliNumber, song.notes, song.youtubeUrl, song.sheetMusicUrl)
     .first<{ id: number }>();
   return row!.id;
 }
 
 export async function updateSong(db: D1Database, songId: number, song: SongDetails): Promise<void> {
   await db
-    .prepare("UPDATE songs SET title = ?, author = ?, song_key = ?, ccli_number = ?, notes = ? WHERE id = ?")
-    .bind(song.title, song.author, song.songKey, song.ccliNumber, song.notes, songId)
+    .prepare(
+      `UPDATE songs
+       SET title = ?, author = ?, song_key = ?, ccli_number = ?, notes = ?, youtube_url = ?, sheet_music_url = ?
+       WHERE id = ?`,
+    )
+    .bind(song.title, song.author, song.songKey, song.ccliNumber, song.notes, song.youtubeUrl, song.sheetMusicUrl, songId)
     .run();
 }
 
@@ -182,6 +265,24 @@ export async function getSongFiles(db: D1Database, songId: number): Promise<Song
   const result = await db
     .prepare("SELECT * FROM song_files WHERE song_id = ? ORDER BY kind, filename")
     .bind(songId)
+    .all<SongFileRow>();
+  return result.results;
+}
+
+/**
+ * The sheet music and chord charts for every song in an event's set list,
+ * so the event page can link straight to them.
+ */
+export async function getSheetFilesForEvent(db: D1Database, eventId: number): Promise<SongFileRow[]> {
+  const result = await db
+    .prepare(
+      `SELECT song_files.*
+       FROM song_files
+       JOIN setlist_items ON setlist_items.song_id = song_files.song_id
+       WHERE setlist_items.event_id = ? AND song_files.kind IN ('sheet', 'chords')
+       ORDER BY song_files.kind, song_files.filename`,
+    )
+    .bind(eventId)
     .all<SongFileRow>();
   return result.results;
 }

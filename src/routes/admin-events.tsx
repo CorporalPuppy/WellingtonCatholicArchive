@@ -21,6 +21,7 @@ import {
   deleteEvent,
   deleteRosterEntry,
   getAllEvents,
+  getParishes,
   getEvent,
   getRoster,
   getSetlist,
@@ -33,7 +34,7 @@ import { formatEventTime, getFormText } from "../helpers";
 import { requireAdmin } from "../middleware";
 import { Notice } from "../pages/layout";
 import { renderPage } from "../pages/render";
-import type { AppEnv, EventRow } from "../types";
+import type { AppEnv, EventRow, ParishRow } from "../types";
 
 const routes = new Hono<AppEnv>();
 
@@ -45,6 +46,8 @@ function readEventForm(form: Record<string, unknown>): EventDetails {
   return {
     title: getFormText(form, "title"),
     description: getFormText(form, "description"),
+    // The parish menu sends the parish's id, or "" for "No parish".
+    parishId: getFormText(form, "parishId") === "" ? null : Number(getFormText(form, "parishId")),
     location: getFormText(form, "location"),
     startsAt: getFormText(form, "startsAt"),
     endsAt: getFormText(form, "endsAt"),
@@ -54,7 +57,7 @@ function readEventForm(form: Record<string, unknown>): EventDetails {
 }
 
 /** The form used both for new events and for editing one. */
-function EventForm(props: { action: string; event?: EventRow; buttonText: string }) {
+function EventForm(props: { action: string; event?: EventRow; parishes: ParishRow[]; buttonText: string }) {
   const event = props.event;
   return (
     <form method="post" action={props.action}>
@@ -71,8 +74,22 @@ function EventForm(props: { action: string; event?: EventRow; buttonText: string
         <input type="datetime-local" name="endsAt" value={event?.ends_at ?? ""} />
       </label>
       <label>
-        Location
-        <input type="text" name="location" value={event?.location ?? ""} />
+        Parish
+        <select name="parishId">
+          <option value="">No parish (somewhere else)</option>
+          {props.parishes.map((parish) => (
+            <option value={String(parish.id)} selected={event?.parish_id === parish.id}>
+              {parish.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p class="muted">
+        Add parishes under <a href="/admin/parishes">Parishes</a>.
+      </p>
+      <label>
+        Extra location details (optional)
+        <input type="text" name="location" value={event?.location ?? ""} placeholder="e.g. Parish hall, or an address" />
       </label>
       <label>
         Description
@@ -80,7 +97,7 @@ function EventForm(props: { action: string; event?: EventRow; buttonText: string
       </label>
       <label class="checkbox">
         <input type="checkbox" name="isPublic" checked={event ? event.is_public === 1 : true} />
-        Show this event to the public (untick for members only)
+        Show this event to the public (untick for members only, e.g. a rehearsal)
       </label>
       <button type="submit">{props.buttonText}</button>
     </form>
@@ -106,6 +123,7 @@ routes.get("/admin/events", async (c) => {
             <tr>
               <td><a href={"/admin/events/" + event.id}>{event.title}</a></td>
               <td>{formatEventTime(event.starts_at)}</td>
+              <td>{event.parish_name ?? event.location}</td>
               <td class="muted">{event.is_public === 1 ? "Public" : "Members only"}</td>
             </tr>
           ))}
@@ -118,14 +136,15 @@ routes.get("/admin/events", async (c) => {
 // ---------------------------------------------------------------------------
 // New event
 // ---------------------------------------------------------------------------
-routes.get("/admin/events/new", (c) => {
+routes.get("/admin/events/new", async (c) => {
+  const parishes = await getParishes(c.env.DB);
   return renderPage(
     c,
     "New event",
     <section class="narrow">
       <p><a href="/admin/events">Back to events</a></p>
       <h1>New event</h1>
-      <EventForm action="/admin/events/new" buttonText="Create event" />
+      <EventForm action="/admin/events/new" parishes={parishes} buttonText="Create event" />
     </section>,
   );
 });
@@ -150,6 +169,7 @@ routes.get("/admin/events/:id", async (c) => {
   const roster = await getRoster(c.env.DB, eventId);
   const setlist = await getSetlist(c.env.DB, eventId);
   const allSongs = await getSongs(c.env.DB, "");
+  const parishes = await getParishes(c.env.DB);
   const justSaved = c.req.query("saved") === "1";
   const base = "/admin/events/" + eventId;
 
@@ -163,7 +183,7 @@ routes.get("/admin/events/:id", async (c) => {
 
       <section class="narrow">
         <h2>Details</h2>
-        <EventForm action={base} event={event} buttonText="Save changes" />
+        <EventForm action={base} event={event} parishes={parishes} buttonText="Save changes" />
       </section>
 
       <section>
@@ -188,7 +208,7 @@ routes.get("/admin/events/:id", async (c) => {
                 <option value={String(song.id)}>{song.title}</option>
               ))}
             </select>
-            <input type="text" name="notes" placeholder="Notes (e.g. Entrance, Communion)" />
+            <input type="text" name="notes" placeholder="Part of the Mass (e.g. Entrance, Communion)" />
             <button type="submit">Add song</button>
           </form>
         )}
@@ -214,7 +234,7 @@ routes.get("/admin/events/:id", async (c) => {
           </tbody>
         </table>
         <form method="post" action={base + "/roster"} class="row">
-          <input type="text" name="role" placeholder="Job (e.g. Reader, Usher)" required />
+          <input type="text" name="role" placeholder="Job (e.g. Cantor, Organist)" required />
           <input type="text" name="personName" placeholder="Person's name" required />
           <input type="text" name="notes" placeholder="Notes (optional)" />
           <button type="submit">Add to roster</button>

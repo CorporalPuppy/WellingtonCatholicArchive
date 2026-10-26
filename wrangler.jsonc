@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "church-site",
+  "name": "choir-site",
   "main": "src/index.tsx",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
@@ -10,17 +10,17 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "church-db",
-      // Replace with the id printed by `npx wrangler d1 create church-db`
+      "database_name": "choir-db",
+      // Replace with the id printed by `npx wrangler d1 create choir-db`
       "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
       "migrations_dir": "migrations"
     }
   ],
   "r2_buckets": [
-    { "binding": "MUSIC", "bucket_name": "church-music" }
+    { "binding": "MUSIC", "bucket_name": "choir-music" }
   ],
   "vars": {
-    "CHURCH_NAME": "Our Church",
+    "CHOIR_NAME": "Our Choir",
     // "yes" = everyone can see music, PowerPoints, rosters, set lists
     //         and members-only events, without logging in.
     // "no"  = only logged-in members can see those.
@@ -36,6 +36,6 @@
   }
   // Secrets (set with `npx wrangler secret put NAME`, never put them here):
   //   BETTER_AUTH_SECRET  random string, 32+ characters
-  //   BETTER_AUTH_URL     e.g. https://yourchurch.nz
+  //   BETTER_AUTH_URL     e.g. https://ourchoir.nz
   //   SETUP_TOKEN         one-time code used to create the first admin account
 }

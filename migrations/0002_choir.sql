@@ -1,16 +1,26 @@
--- Events double as services: a Sunday service is an event with a roster
--- and a set list attached.
+-- The parishes (churches) the choir sings at.
+CREATE TABLE parishes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  address TEXT NOT NULL DEFAULT '',
+  notes TEXT NOT NULL DEFAULT ''
+);
+
+-- Events: Masses the choir sings at, rehearsals, and so on.
+-- A Mass is an event with a set list (and maybe a roster) attached.
 CREATE TABLE events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
-  location TEXT NOT NULL DEFAULT '',
+  parish_id INTEGER REFERENCES parishes (id) ON DELETE SET NULL,  -- empty if not at a parish
+  location TEXT NOT NULL DEFAULT '',  -- extra details, e.g. "Parish hall"
   starts_at TEXT NOT NULL,          -- local time, "YYYY-MM-DDTHH:MM"
   ends_at TEXT,
   is_public INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX events_starts_at_idx ON events (starts_at);
+CREATE INDEX events_parish_idx ON events (parish_id);
 
 CREATE TABLE songs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -19,6 +29,8 @@ CREATE TABLE songs (
   song_key TEXT NOT NULL DEFAULT '',
   ccli_number TEXT NOT NULL DEFAULT '',
   notes TEXT NOT NULL DEFAULT '',
+  youtube_url TEXT NOT NULL DEFAULT '',        -- a reference recording on YouTube
+  sheet_music_url TEXT NOT NULL DEFAULT '',    -- a link to sheet music elsewhere
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX songs_title_idx ON songs (title COLLATE NOCASE);

@@ -8,10 +8,10 @@
 //
 // Most days you don't need this page: the Readings page loads each day's
 // readings from Universalis by itself. Typing readings in here replaces
-// the Universalis ones for that day (handy for a special parish occasion).
+// the Universalis ones for that day (handy for a special occasion).
 //
 // Note: Bible translations are copyrighted. Only paste in full texts the
-// church is allowed to publish (for example under its lectionary licence).
+// choir is allowed to publish (for example under its lectionary licence).
 // ===========================================================================
 
 import { Hono } from "hono";

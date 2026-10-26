@@ -6,7 +6,7 @@ import type { SessionUser } from "../auth";
 
 type LayoutProps = {
   title: string;
-  churchName: string;
+  choirName: string;
   user: SessionUser | null;
   showMemberLinks: boolean;
   children?: Child;
@@ -21,15 +21,15 @@ export function Layout(props: LayoutProps) {
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>{props.title} | {props.churchName}</title>
+        <title>{props.title} | {props.choirName}</title>
         <link rel="stylesheet" href="/styles.css" />
       </head>
       <body>
         <header class="site-header">
-          <a href="/" class="site-name">{props.churchName}</a>
+          <a href="/" class="site-name">{props.choirName}</a>
           <nav>
             <a href="/">Home</a>
-            <a href="/events">Events</a>
+            <a href="/events">Calendar</a>
             <a href="/readings">Readings</a>
             {props.showMemberLinks && <a href="/music">Music</a>}
             {props.showMemberLinks && <a href="/powerpoints">PowerPoints</a>}
@@ -47,7 +47,7 @@ export function Layout(props: LayoutProps) {
         <main>{props.children}</main>
 
         <footer class="site-footer">
-          <p>{props.churchName}</p>
+          <p>{props.choirName}</p>
         </footer>
       </body>
     </html>

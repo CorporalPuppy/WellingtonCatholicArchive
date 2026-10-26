@@ -20,6 +20,7 @@ import powerpointPages from "./routes/powerpoints";
 import readingsPages from "./routes/readings";
 import adminHome from "./routes/admin-home";
 import adminEvents from "./routes/admin-events";
+import adminParishes from "./routes/admin-parishes";
 import adminSongs from "./routes/admin-songs";
 import adminUsers from "./routes/admin-users";
 import adminPowerpoints from "./routes/admin-powerpoints";
@@ -39,7 +40,7 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => {
 });
 
 // All the pages of the site, grouped by area.
-app.route("/", publicPages); //   /, /events, /events/:id
+app.route("/", publicPages); //   /, /events (calendar), /events/:id
 app.route("/", loginPages); //    /login, /logout, /setup
 app.route("/", accountPages); //  /account
 app.route("/", musicPages); //    /music, /music/:id, /files/:id
@@ -47,6 +48,7 @@ app.route("/", powerpointPages); // /powerpoints
 app.route("/", readingsPages); // /readings
 app.route("/", adminHome); //     /admin
 app.route("/", adminEvents); //   /admin/events/...
+app.route("/", adminParishes); // /admin/parishes/...
 app.route("/", adminSongs); //    /admin/songs/...
 app.route("/", adminUsers); //    /admin/users/...
 app.route("/", adminPowerpoints); // /admin/powerpoints/...

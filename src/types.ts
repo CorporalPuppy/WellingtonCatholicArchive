@@ -4,7 +4,7 @@ export type Env = {
   DB: D1Database;
   MUSIC: R2Bucket;
   ASSETS: Fetcher;
-  CHURCH_NAME: string;
+  CHOIR_NAME: string;
   EVERYTHING_PUBLIC: "yes" | "no";
   TIMEZONE: string;
   UNIVERSALIS_CALENDAR: string;
@@ -21,10 +21,20 @@ export type AppEnv = {
   };
 };
 
+export type ParishRow = {
+  id: number;
+  name: string;
+  address: string;
+  notes: string;
+};
+
 export type EventRow = {
   id: number;
   title: string;
   description: string;
+  parish_id: number | null;
+  parish_name: string | null; //    filled in from the parishes table
+  parish_address: string | null; // filled in from the parishes table
   location: string;
   starts_at: string;
   ends_at: string | null;
@@ -38,6 +48,8 @@ export type SongRow = {
   song_key: string;
   ccli_number: string;
   notes: string;
+  youtube_url: string;
+  sheet_music_url: string;
 };
 
 export type SongFileRow = {
@@ -66,7 +78,10 @@ export type SetlistRow = {
   position: number;
   notes: string;
   title: string;
+  author: string;
   song_key: string;
+  youtube_url: string;
+  sheet_music_url: string;
 };
 
 export type PowerpointRow = {

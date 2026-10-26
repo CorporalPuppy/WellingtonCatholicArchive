@@ -28,7 +28,7 @@ import {
   type SongDetails,
 } from "../database";
 import { makeStorageKey } from "../files";
-import { FILE_KIND_LABELS, formatFileSize, getFormText } from "../helpers";
+import { cleanWebLink, FILE_KIND_LABELS, formatFileSize, getFormText } from "../helpers";
 import { requireAdmin } from "../middleware";
 import { Notice } from "../pages/layout";
 import { renderPage } from "../pages/render";
@@ -46,6 +46,8 @@ function readSongForm(form: Record<string, unknown>): SongDetails {
     songKey: getFormText(form, "songKey"),
     ccliNumber: getFormText(form, "ccliNumber"),
     notes: getFormText(form, "notes"),
+    youtubeUrl: cleanWebLink(getFormText(form, "youtubeUrl")),
+    sheetMusicUrl: cleanWebLink(getFormText(form, "sheetMusicUrl")),
   };
 }
 
@@ -68,6 +70,14 @@ function SongForm(props: { action: string; song?: SongRow; buttonText: string })
       <label>
         CCLI or licence number (optional)
         <input type="text" name="ccliNumber" value={song?.ccli_number ?? ""} />
+      </label>
+      <label>
+        YouTube link (a recording to learn from)
+        <input type="url" name="youtubeUrl" value={song?.youtube_url ?? ""} placeholder="https://www.youtube.com/watch?v=..." />
+      </label>
+      <label>
+        Sheet music link (optional, if the sheet music is on another website)
+        <input type="url" name="sheetMusicUrl" value={song?.sheet_music_url ?? ""} placeholder="https://..." />
       </label>
       <label>
         Notes
@@ -168,7 +178,7 @@ routes.get("/admin/songs/:id", async (c) => {
 
         <h3>Upload a file</h3>
         <p class="muted">
-          Only upload music the church's copyright licence lets you share with members.
+          Only upload music your copyright licence lets you share. Sheet music and chord charts are linked from public set lists, so anyone can open them while EVERYTHING_PUBLIC is "yes".
         </p>
         {/* enctype="multipart/form-data" is needed for forms that send files. */}
         <form method="post" action={base + "/files"} enctype="multipart/form-data" class="row">
