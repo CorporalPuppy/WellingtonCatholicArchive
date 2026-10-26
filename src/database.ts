@@ -275,16 +275,29 @@ export async function saveReadings(db: D1Database, readings: ReadingsRow): Promi
   await db
     .prepare(
       `INSERT OR REPLACE INTO daily_readings
-         (reading_date, day_name, first_reading, psalm, second_reading, gospel, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         (reading_date, day_name, lectionary_number,
+          first_reading, first_reading_text,
+          psalm, psalm_text,
+          second_reading, second_reading_text,
+          alleluia, alleluia_text,
+          gospel, gospel_text,
+          notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       readings.reading_date,
       readings.day_name,
+      readings.lectionary_number,
       readings.first_reading,
+      readings.first_reading_text,
       readings.psalm,
+      readings.psalm_text,
       readings.second_reading,
+      readings.second_reading_text,
+      readings.alleluia,
+      readings.alleluia_text,
       readings.gospel,
+      readings.gospel_text,
       readings.notes,
     )
     .run();

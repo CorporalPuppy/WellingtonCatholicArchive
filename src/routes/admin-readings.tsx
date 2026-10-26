@@ -5,6 +5,9 @@
 //   GET  /admin/readings?date=2026-11-01  form filled in for that date
 //   POST /admin/readings                  save the readings for a date
 //   POST /admin/readings/:date/delete     delete one date's readings
+//
+// Note: Bible translations are copyrighted. Only paste in full texts the
+// church is allowed to publish (for example under its lectionary licence).
 // ===========================================================================
 
 import { Hono } from "hono";
@@ -13,6 +16,7 @@ import { formatDate, getFormText, getTodaysDate, isValidDate } from "../helpers"
 import { requireAdmin } from "../middleware";
 import { Notice } from "../pages/layout";
 import { renderPage } from "../pages/render";
+import { READING_PARTS } from "../reading-parts";
 import type { AppEnv } from "../types";
 
 const routes = new Hono<AppEnv>();
@@ -50,28 +54,39 @@ routes.get("/admin/readings", async (c) => {
         <form method="post" action="/admin/readings">
           <input type="hidden" name="date" value={date} />
           <label>
-            Name of the day (optional)
-            <input type="text" name="dayName" value={existing?.day_name ?? ""} placeholder="e.g. 30th Sunday in Ordinary Time" />
+            Name of the day
+            <input type="text" name="day_name" value={existing?.day_name ?? ""} placeholder="e.g. Monday of the Thirtieth Week in Ordinary Time" />
           </label>
           <label>
-            First reading
-            <input type="text" name="firstReading" value={existing?.first_reading ?? ""} placeholder="e.g. Jeremiah 31:7-9" />
+            Lectionary number (optional)
+            <input type="text" name="lectionary_number" value={existing?.lectionary_number ?? ""} placeholder="e.g. 477" />
           </label>
+
+          {/* One reference box and one text box for each part of the readings. */}
+          {READING_PARTS.map((part) => (
+            <fieldset class="reading-fields">
+              <legend>{part.heading}</legend>
+              <label>
+                Reference
+                <input
+                  type="text"
+                  name={part.referenceField}
+                  value={existing ? existing[part.referenceField] : ""}
+                  placeholder={part.hint}
+                />
+              </label>
+              <label>
+                Full text (paste it in; line breaks are kept)
+                <textarea name={part.textField} rows={6}>
+                  {existing ? existing[part.textField] : ""}
+                </textarea>
+              </label>
+            </fieldset>
+          ))}
+
           <label>
-            Psalm
-            <input type="text" name="psalm" value={existing?.psalm ?? ""} placeholder="e.g. Psalm 125" />
-          </label>
-          <label>
-            Second reading (Sundays and feasts)
-            <input type="text" name="secondReading" value={existing?.second_reading ?? ""} />
-          </label>
-          <label>
-            Gospel
-            <input type="text" name="gospel" value={existing?.gospel ?? ""} placeholder="e.g. Mark 10:46-52" />
-          </label>
-          <label>
-            Notes, a reflection, or the full text (optional)
-            <textarea name="notes" rows={8}>{existing?.notes ?? ""}</textarea>
+            Reflection (optional)
+            <textarea name="notes" rows={4}>{existing?.notes ?? ""}</textarea>
           </label>
           <button type="submit">Save readings</button>
         </form>
@@ -112,13 +127,22 @@ routes.post("/admin/readings", async (c) => {
     return c.redirect("/admin/readings");
   }
 
+  // The form's box names match the table's column names, so each one
+  // can be copied straight across.
   await saveReadings(c.env.DB, {
     reading_date: date,
-    day_name: getFormText(form, "dayName"),
-    first_reading: getFormText(form, "firstReading"),
+    day_name: getFormText(form, "day_name"),
+    lectionary_number: getFormText(form, "lectionary_number"),
+    first_reading: getFormText(form, "first_reading"),
+    first_reading_text: getFormText(form, "first_reading_text"),
     psalm: getFormText(form, "psalm"),
-    second_reading: getFormText(form, "secondReading"),
+    psalm_text: getFormText(form, "psalm_text"),
+    second_reading: getFormText(form, "second_reading"),
+    second_reading_text: getFormText(form, "second_reading_text"),
+    alleluia: getFormText(form, "alleluia"),
+    alleluia_text: getFormText(form, "alleluia_text"),
     gospel: getFormText(form, "gospel"),
+    gospel_text: getFormText(form, "gospel_text"),
     notes: getFormText(form, "notes"),
   });
   return c.redirect("/admin/readings?date=" + date + "&saved=1");

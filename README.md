@@ -101,6 +101,7 @@ church-site/
     ├── middleware.ts       "must be logged in" / "must be admin" checks
     ├── database.ts         every SQL query, one plain function each
     ├── files.ts            sends files from R2 to the browser
+    ├── reading-parts.ts    the parts of each day's readings (Reading 1, Psalm, ...)
     ├── helpers.ts          small tools: dates, file sizes, form reading
     ├── types.ts            the shape of each table row and setting
     ├── pages/
@@ -151,6 +152,9 @@ Other things to personalise:
 - **Colours:** top of `public/styles.css`.
 - **Welcome text, address, service times:** `src/routes/public-pages.tsx`
   (look for the `TODO` comments).
+- **Readings page:** laid out like the USCCB daily readings. Admins enter
+  each part (Reading 1, Responsorial Psalm, Reading 2, Alleluia, Gospel) with
+  its reference and pasted-in full text under **Admin → Daily readings**.
 - **Readings link:** each day links to the full texts on Universalis. To use
   another site, change `fullReadingsLink` in `src/routes/readings.tsx`.
 - **Logo:** put an image in `public/` (e.g. `public/logo.png`) and add

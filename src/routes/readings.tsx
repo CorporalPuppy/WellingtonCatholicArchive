@@ -1,17 +1,20 @@
 // ===========================================================================
 // Readings for every day: GET /readings  or  /readings?date=2026-10-26
 //
-// Admins type in each day's readings (see admin-readings.tsx). Every day
-// also links to the full texts on Universalis, so there is always
-// something to read, even on days nobody has filled in.
-// Everyone can see this page.
+// Laid out like the USCCB daily readings page: the date, the name of the
+// day, the Lectionary number, then each reading with its reference and
+// full text. Admins type these in (see admin-readings.tsx).
+//
+// Every day also links to Universalis, so days nobody has filled in still
+// have readings. Everyone can see this page.
 // ===========================================================================
 
 import { Hono } from "hono";
 import { getReadingsForDate } from "../database";
 import { addDays, formatDate, getTodaysDate, isValidDate } from "../helpers";
 import { renderPage } from "../pages/render";
-import type { AppEnv } from "../types";
+import { READING_PARTS } from "../reading-parts";
+import type { AppEnv, ReadingsRow } from "../types";
 
 const routes = new Hono<AppEnv>();
 
@@ -38,67 +41,78 @@ routes.get("/readings", async (c) => {
 
   return renderPage(
     c,
-    "Readings",
-    <>
-      <h1>Readings</h1>
-      <p class="readings-nav">
-        <a href={"/readings?date=" + previousDay}>Previous day</a>
-        {" | "}
-        <a href="/readings">Today</a>
-        {" | "}
-        <a href={"/readings?date=" + nextDay}>Next day</a>
-      </p>
-      <form method="get" action="/readings" class="search">
-        <input type="date" name="date" value={date} />
-        <button type="submit">Go</button>
-      </form>
-
-      <h2>{formatDate(date)}</h2>
-
-      {readings === null && <p>The readings for this day haven't been added here yet.</p>}
-
-      {readings !== null && (
-        <>
-          {readings.day_name !== "" && <p class="event-when">{readings.day_name}</p>}
-          <table>
-            <tbody>
-              {readings.first_reading !== "" && (
-                <tr>
-                  <th>First reading</th>
-                  <td>{readings.first_reading}</td>
-                </tr>
-              )}
-              {readings.psalm !== "" && (
-                <tr>
-                  <th>Psalm</th>
-                  <td>{readings.psalm}</td>
-                </tr>
-              )}
-              {readings.second_reading !== "" && (
-                <tr>
-                  <th>Second reading</th>
-                  <td>{readings.second_reading}</td>
-                </tr>
-              )}
-              {readings.gospel !== "" && (
-                <tr>
-                  <th>Gospel</th>
-                  <td>{readings.gospel}</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-          {readings.notes !== "" && <div class="long-text">{readings.notes}</div>}
-        </>
+    "Readings for " + formatDate(date),
+    <div class="readings-page">
+      {/* Previous / next day, and a date picker */}
+      <nav class="readings-nav">
+        <a href={"/readings?date=" + previousDay}>&larr; Previous day</a>
+        <form method="get" action="/readings" class="readings-date-picker">
+          <input type="date" name="date" value={date} aria-label="Choose a date" />
+          <button type="submit">Go</button>
+        </form>
+        <a href={"/readings?date=" + nextDay}>Next day &rarr;</a>
+      </nav>
+      {date !== today && (
+        <p class="readings-today-link">
+          <a href="/readings">Back to today</a>
+        </p>
       )}
 
-      <p>
+      {/* The date and the name of the day */}
+      <header class="readings-header">
+        <p class="readings-date">{formatDate(date)}</p>
+        {readings !== null && readings.day_name !== "" && <h1>{readings.day_name}</h1>}
+        {(readings === null || readings.day_name === "") && <h1>Daily Readings</h1>}
+        {readings !== null && readings.lectionary_number !== "" && (
+          <p class="readings-lectionary">Lectionary: {readings.lectionary_number}</p>
+        )}
+      </header>
+
+      {readings === null && (
+        <p>The readings for this day haven't been added here yet.</p>
+      )}
+
+      {readings !== null && <ReadingSections readings={readings} />}
+
+      {readings !== null && readings.notes !== "" && (
+        <section class="reading">
+          <h2>Reflection</h2>
+          <div class="reading-text">{readings.notes}</div>
+        </section>
+      )}
+
+      <p class="readings-source">
         <a href={fullReadingsLink(date)} target="_blank" rel="noopener">
-          Read the full texts for this day on Universalis
+          See this day's readings on Universalis
         </a>
       </p>
-    </>,
+    </div>,
   );
 });
+
+/** Every part of the day's readings that has something filled in. */
+function ReadingSections(props: { readings: ReadingsRow }) {
+  const readings = props.readings;
+  return (
+    <>
+      {READING_PARTS.map((part) => {
+        const reference = readings[part.referenceField];
+        const text = readings[part.textField];
+
+        // Skip parts this day doesn't have (e.g. no Reading 2 on weekdays).
+        if (reference === "" && text === "") {
+          return null;
+        }
+        return (
+          <section class="reading">
+            <h2>{part.heading}</h2>
+            {reference !== "" && <p class="reading-reference">{reference}</p>}
+            {text !== "" && <div class="reading-text">{text}</div>}
+          </section>
+        );
+      })}
+    </>
+  );
+}
 
 export default routes;

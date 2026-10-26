@@ -13,13 +13,22 @@ CREATE TABLE powerpoints (
 );
 CREATE INDEX powerpoints_date_idx ON powerpoints (service_date);
 
--- Readings for a day: one row per date.
+-- Readings for a day: one row per date, laid out like the USCCB
+-- daily readings page. Each part has a reference ("Luke 13:10-17") and
+-- its full text.
 CREATE TABLE daily_readings (
-  reading_date TEXT PRIMARY KEY,    -- "YYYY-MM-DD"
-  day_name TEXT NOT NULL DEFAULT '',        -- e.g. "30th Sunday in Ordinary Time"
-  first_reading TEXT NOT NULL DEFAULT '',   -- e.g. "Jeremiah 31:7-9"
+  reading_date TEXT PRIMARY KEY,                -- "YYYY-MM-DD"
+  day_name TEXT NOT NULL DEFAULT '',            -- e.g. "Monday of the Thirtieth Week in Ordinary Time"
+  lectionary_number TEXT NOT NULL DEFAULT '',   -- e.g. "477"
+  first_reading TEXT NOT NULL DEFAULT '',
+  first_reading_text TEXT NOT NULL DEFAULT '',
   psalm TEXT NOT NULL DEFAULT '',
-  second_reading TEXT NOT NULL DEFAULT '',
+  psalm_text TEXT NOT NULL DEFAULT '',
+  second_reading TEXT NOT NULL DEFAULT '',      -- Sundays and big feasts only
+  second_reading_text TEXT NOT NULL DEFAULT '',
+  alleluia TEXT NOT NULL DEFAULT '',
+  alleluia_text TEXT NOT NULL DEFAULT '',
   gospel TEXT NOT NULL DEFAULT '',
-  notes TEXT NOT NULL DEFAULT ''            -- a reflection, or the full text
+  gospel_text TEXT NOT NULL DEFAULT '',
+  notes TEXT NOT NULL DEFAULT ''                -- an optional reflection
 );

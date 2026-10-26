@@ -182,3 +182,58 @@ button.danger-text { color: #a00; }
 .notice { padding: 12px 16px; border-radius: 6px; }
 .notice-error { background: #fde8e8; color: #8a1111; }
 .notice-success { background: #e6f4ea; color: #1d5b2c; }
+
+/* ---- Readings page (laid out like the USCCB daily readings) ---- */
+
+.readings-page { max-width: 720px; margin: 0 auto; }
+
+.readings-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-colour);
+}
+
+.readings-date-picker { display: flex; gap: 8px; }
+.readings-date-picker input { margin: 0; width: auto; }
+.readings-today-link { text-align: center; margin: 8px 0 0; }
+
+.readings-header { text-align: center; margin: 24px 0 8px; }
+.readings-header h1 { margin: 4px 0; font-size: 1.8rem; }
+.readings-date {
+  margin: 0;
+  color: var(--muted-text-colour);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.9rem;
+}
+.readings-lectionary { margin: 4px 0 0; color: var(--muted-text-colour); }
+
+.reading {
+  border-top: 1px solid var(--border-colour);
+  padding-top: 16px;
+  margin-top: 24px;
+}
+.reading h2 { margin: 0 0 4px; font-size: 1.4rem; }
+.reading-reference { margin: 0 0 12px; color: var(--main-colour); font-weight: bold; }
+
+/* Keep the line breaks of pasted-in texts, and make them easy to read. */
+.reading-text { white-space: pre-wrap; font-size: 1.1rem; line-height: 1.75; }
+
+.readings-source { text-align: center; margin-top: 32px; font-size: 0.95rem; }
+
+fieldset.reading-fields {
+  border: 1px solid var(--border-colour);
+  border-radius: 6px;
+  margin: 0 0 16px;
+  padding: 8px 12px 0;
+}
+fieldset.reading-fields legend { font-weight: bold; color: var(--main-colour); padding: 0 4px; }
+
+/* On phones: previous/next on one line, the date picker underneath. */
+@media (max-width: 600px) {
+  .readings-date-picker { order: 3; flex-basis: 100%; justify-content: center; }
+}

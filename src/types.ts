@@ -83,9 +83,16 @@ export type PowerpointRow = {
 export type ReadingsRow = {
   reading_date: string;
   day_name: string;
+  lectionary_number: string;
   first_reading: string;
+  first_reading_text: string;
   psalm: string;
+  psalm_text: string;
   second_reading: string;
+  second_reading_text: string;
+  alleluia: string;
+  alleluia_text: string;
   gospel: string;
+  gospel_text: string;
   notes: string;
 };
