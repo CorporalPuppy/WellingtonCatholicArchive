@@ -113,7 +113,7 @@ routes.get("/admin/events", async (c) => {
     c,
     "Events",
     <>
-      <p><a href="/admin">Back to admin</a></p>
+      <p><a class="back-link" href="/admin">Back to admin</a></p>
       <h1>Events</h1>
       <p><a class="button" href="/admin/events/new">Add an event</a></p>
       {events.length === 0 && <p>No events yet.</p>}
@@ -142,7 +142,7 @@ routes.get("/admin/events/new", async (c) => {
     c,
     "New event",
     <section class="narrow">
-      <p><a href="/admin/events">Back to events</a></p>
+      <p><a class="back-link" href="/admin/events">Back to events</a></p>
       <h1>New event</h1>
       <EventForm action="/admin/events/new" parishes={parishes} buttonText="Create event" />
     </section>,
@@ -177,7 +177,7 @@ routes.get("/admin/events/:id", async (c) => {
     c,
     "Edit " + event.title,
     <>
-      <p><a href="/admin/events">Back to events</a> | <a href={"/events/" + eventId}>View on site</a></p>
+      <p><a class="back-link" href="/admin/events">Back to events</a> <a class="button button-small button-secondary" href={"/events/" + eventId}>View on site</a></p>
       <h1>{event.title}</h1>
       {justSaved && <Notice kind="success" message="Saved." />}
 

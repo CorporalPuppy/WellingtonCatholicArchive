@@ -42,14 +42,14 @@ routes.get("/", async (c) => {
         <h2>Where we're singing next</h2>
         <EventList events={nextFewEvents} />
         <p>
-          <a href="/events">See the full calendar</a>
+          <a class="button button-secondary" href="/events">See the full calendar</a>
         </p>
       </section>
 
       <section>
         <h2>For singers</h2>
         <p>
-          <a href="/readings">Today's readings</a> - <a href="/music">Music library</a>
+          <a class="button button-secondary" href="/readings">Today's readings</a> <a class="button button-secondary" href="/music">Music library</a>
         </p>
       </section>
     </>,

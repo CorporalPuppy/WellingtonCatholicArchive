@@ -32,7 +32,7 @@ routes.get("/admin/powerpoints", async (c) => {
     c,
     "PowerPoints",
     <>
-      <p><a href="/admin">Back to admin</a></p>
+      <p><a class="back-link" href="/admin">Back to admin</a></p>
       <h1>PowerPoint archive</h1>
       {message === "saved" && <Notice kind="success" message="Uploaded." />}
       {message === "missing" && <Notice kind="error" message="Please pick a file and give it a title and date." />}

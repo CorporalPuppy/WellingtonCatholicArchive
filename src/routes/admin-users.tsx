@@ -48,7 +48,7 @@ routes.get("/admin/users", async (c) => {
     c,
     "Member accounts",
     <>
-      <p><a href="/admin">Back to admin</a></p>
+      <p><a class="back-link" href="/admin">Back to admin</a></p>
       <h1>Member accounts</h1>
       {message && <Notice kind={message.kind} message={message.text} />}
 

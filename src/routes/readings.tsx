@@ -66,16 +66,16 @@ routes.get("/readings", async (c) => {
     <div class="readings-page">
       {/* Previous / next day, and a date picker */}
       <nav class="readings-nav">
-        <a href={"/readings?date=" + previousDay}>&larr; Previous day</a>
+        <a class="button button-small button-secondary" href={"/readings?date=" + previousDay}>&larr; Previous day</a>
         <form method="get" action="/readings" class="readings-date-picker">
           <input type="date" name="date" value={date} aria-label="Choose a date" />
           <button type="submit">Go</button>
         </form>
-        <a href={"/readings?date=" + nextDay}>Next day &rarr;</a>
+        <a class="button button-small button-secondary" href={"/readings?date=" + nextDay}>Next day &rarr;</a>
       </nav>
       {date !== today && (
         <p class="readings-today-link">
-          <a href="/readings">Back to today</a>
+          <a class="button button-small button-secondary" href="/readings">Back to today</a>
         </p>
       )}
 

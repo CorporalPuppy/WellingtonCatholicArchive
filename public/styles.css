@@ -64,8 +64,30 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-a { color: var(--accent); text-underline-offset: 3px; }
-a:hover { text-decoration-thickness: 2px; }
+/* Links: accent colour, no underline until you point at them */
+a {
+  color: var(--accent);
+  font-weight: 500;
+  text-decoration: none;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1.5px;
+  transition: color 0.15s, background 0.15s;
+}
+a:hover { text-decoration: underline; }
+/* Links that look like cards, pills or buttons never get an underline */
+.site-name:hover, .month-event:hover, .admin-menu a:hover { text-decoration: none; }
+
+/* "Back to ..." links at the top of a page, with an arrow in front */
+a.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+a.back-link::before { content: "\2190"; transition: transform 0.15s; }  /* ← */
+a.back-link:hover { color: var(--accent); text-decoration: none; }
+a.back-link:hover::before { transform: translateX(-3px); }
 
 main {
   max-width: 880px;
@@ -148,6 +170,7 @@ main {
 }
 .site-footer p { margin: 4px 0; }
 .site-footer a { color: var(--muted); }
+.site-footer a:hover { color: var(--text); }
 
 /* ---- Text ---- */
 
@@ -283,7 +306,19 @@ button, .button {
   text-decoration: none;
   white-space: nowrap;
 }
-button:hover, .button:hover { filter: brightness(1.1); }
+button:hover, .button:hover { filter: brightness(1.1); text-decoration: none; }
+
+/* A quieter, outlined button, for "Open", "Next day", "View on site"... */
+.button-secondary {
+  background: var(--surface);
+  color: var(--accent);
+  border: 1px solid var(--border);
+}
+.button-secondary:hover { filter: none; border-color: var(--accent); background: var(--accent-soft); }
+
+/* A row of buttons with space between them */
+p:has(> .button) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.readings-today-link, .month-today-link { justify-content: center; }
 
 button.danger { background: var(--danger); }
 
@@ -292,10 +327,9 @@ button.link-button {
   background: none;
   color: var(--accent);
   padding: 0;
-  font-weight: normal;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  font-weight: 500;
 }
+button.link-button:hover { text-decoration: underline; filter: none; }
 button.danger-text { color: var(--danger); }
 
 .narrow { max-width: 520px; }
@@ -390,7 +424,7 @@ fieldset.reading-fields legend { font-weight: 700; color: var(--accent); padding
 }
 .readings-nav > a { text-decoration: none; font-weight: 600; }
 
-.readings-date-picker { display: flex; gap: 8px; }
+.readings-date-picker { display: flex; align-items: center; gap: 8px; }
 .readings-date-picker input { margin: 0; width: auto; }
 .readings-today-link { text-align: center; margin: 8px 0 0; }
 

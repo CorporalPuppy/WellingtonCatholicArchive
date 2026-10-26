@@ -49,7 +49,7 @@ routes.get("/admin/parishes", async (c) => {
     c,
     "Parishes",
     <>
-      <p><a href="/admin">Back to admin</a></p>
+      <p><a class="back-link" href="/admin">Back to admin</a></p>
       <h1>Parishes</h1>
       <p class="muted">The parishes the choir sings at. Each event can be linked to one.</p>
       {justSaved && <Notice kind="success" message="Saved." />}

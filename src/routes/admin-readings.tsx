@@ -43,7 +43,7 @@ routes.get("/admin/readings", async (c) => {
     c,
     "Readings",
     <>
-      <p><a href="/admin">Back to admin</a></p>
+      <p><a class="back-link" href="/admin">Back to admin</a></p>
       <h1>Daily readings</h1>
       {justSaved && <Notice kind="success" message="Saved." />}
 
