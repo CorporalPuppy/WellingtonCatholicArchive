@@ -13,6 +13,7 @@ import { loadUser } from "./middleware";
 import type { AppEnv } from "./types";
 
 import publicPages from "./routes/public-pages";
+import calendarPages from "./routes/calendar";
 import loginPages from "./routes/login";
 import accountPages from "./routes/account";
 import musicPages from "./routes/music";
@@ -40,7 +41,8 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => {
 });
 
 // All the pages of the site, grouped by area.
-app.route("/", publicPages); //   /, /events (calendar), /events/:id
+app.route("/", publicPages); //   /, /events/:id
+app.route("/", calendarPages); // /events (the calendar)
 app.route("/", loginPages); //    /login, /logout, /setup
 app.route("/", accountPages); //  /account
 app.route("/", musicPages); //    /music, /music/:id, /files/:id

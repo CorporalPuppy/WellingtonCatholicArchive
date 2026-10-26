@@ -421,6 +421,130 @@ fieldset.reading-fields legend { font-weight: 700; color: var(--accent); padding
 .readings-copyright { text-align: center; font-size: 0.8rem; margin-top: 28px; }
 .readings-source { text-align: center; margin-top: 24px; font-size: 0.95rem; }
 
+/* ---- Calendar: view switch and month grid ---- */
+
+.calendar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.calendar-controls form.search { margin: 0; }
+
+/* "Upcoming | Month": two pills side by side, the chosen one filled in. */
+.view-switch {
+  display: inline-flex;
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 4px;
+}
+.view-switch a {
+  padding: 6px 16px;
+  border-radius: 999px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--accent);
+}
+.view-switch a.active { background: var(--surface); box-shadow: var(--shadow); color: var(--text); }
+
+.month-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.month-nav h2 { margin: 0; }
+.month-nav a { text-decoration: none; font-weight: 600; }
+.month-today-link { text-align: center; margin: 4px 0 0; font-size: 0.9rem; }
+
+/* Seven columns, one per weekday. */
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  margin-top: 16px;
+  background: var(--border);
+  gap: 1px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.month-weekday {
+  background: var(--surface);
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 8px 0;
+}
+
+.month-day {
+  background: var(--surface);
+  min-height: 104px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.month-day.other-month { background: var(--background); }
+.month-day.other-month .day-number { color: var(--muted); opacity: 0.6; }
+
+.day-number { font-size: 0.85rem; font-weight: 600; width: 26px; height: 26px; display: grid; place-items: center; }
+/* Today's date in a filled circle, like Google Calendar. */
+.month-day.today .day-number { background: var(--accent); color: var(--background); border-radius: 50%; }
+
+.month-event {
+  display: block;
+  font-size: 0.78rem;
+  line-height: 1.3;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 6px;
+  padding: 3px 6px;
+  text-decoration: none;
+  /* Long titles are cut short with "..." */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.month-event:hover { filter: brightness(0.95); }
+.month-event-time { font-weight: 700; }
+
+/* ---- Song resources: file rows, previews ---- */
+
+.file-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.file-actions { display: flex; align-items: center; gap: 12px; }
+.button-small { padding: 6px 14px; font-size: 0.85rem; }
+
+details.preview { margin-top: 10px; }
+details.preview summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--accent);
+  width: fit-content;
+}
+details.preview iframe {
+  width: 100%;
+  height: 70vh;
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+}
+details.preview img { max-width: 100%; margin-top: 10px; border-radius: 10px; }
+
+.phone-only { display: none; }
+
 /* ---- Phones ---- */
 
 @media (max-width: 600px) {
@@ -430,4 +554,9 @@ fieldset.reading-fields legend { font-weight: 700; color: var(--accent); padding
   .site-header nav { width: 100%; margin: 0 -8px; }
   /* Readings: previous/next on one line, the date picker underneath. */
   .readings-date-picker { order: 3; flex-basis: 100%; justify-content: center; }
+  /* Month grid: smaller days, and events become small coloured bars. */
+  .month-day { min-height: 64px; padding: 3px; }
+  .month-event { font-size: 0; padding: 0; height: 6px; border-radius: 3px; background: var(--accent); }
+  .day-number { width: 22px; height: 22px; font-size: 0.75rem; }
+  .phone-only { display: block; }
 }

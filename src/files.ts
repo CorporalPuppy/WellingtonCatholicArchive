@@ -30,6 +30,8 @@ export async function sendFileFromStorage(
   headers.set("Content-Type", contentType);
   headers.set("ETag", object.httpEtag);
   headers.set("Accept-Ranges", "bytes");
+  // Tells browsers to trust our Content-Type and not guess.
+  headers.set("X-Content-Type-Options", "nosniff");
 
   // "attachment" = save the file, "inline" = show it in the browser.
   const disposition = c.req.query("download") ? "attachment" : "inline";

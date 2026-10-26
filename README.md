@@ -95,7 +95,8 @@ choir-site/
 ├── migrations/             SQL that creates the database tables
 │   ├── 0001_auth.sql       login tables (used by Better Auth)
 │   ├── 0002_choir.sql      parishes, events, songs, files, rosters, set lists
-│   └── 0003_powerpoints_and_readings.sql
+│   ├── 0003_powerpoints_and_readings.sql
+│   └── 0004_musescore_files.sql   adds MuseScore as a kind of song file
 │
 ├── public/                 plain files sent as-is
 │   ├── styles.css          colours and layout (change colours at the top)
@@ -115,9 +116,11 @@ choir-site/
     ├── types.ts            the shape of each table row and setting
     ├── pages/
     │   ├── layout.tsx      header, menu and footer around every page
+    │   ├── event-list.tsx  a list of events as cards
     │   └── render.tsx      shortcut to show a page inside the layout
     └── routes/             one file per area of the site
-        ├── public-pages.tsx   home page, calendar, one event with its set list
+        ├── public-pages.tsx   home page, one event with its set list
+        ├── calendar.tsx       the calendar: "Upcoming" list and "Month" grid
         ├── login.tsx          log in, log out, first-time setup
         ├── account.tsx        change your own password
         ├── music.tsx          music library and file downloads
@@ -309,6 +312,21 @@ exists.
 
 Then log in, open **Admin**, and add your parishes first, then songs
 (with their YouTube links and sheet music), events and member accounts.
+
+### Song resources
+
+Each song can hold as many files as you like. On a song's admin page you
+can pick several files at once, and the site sorts them by their names:
+
+| File | Goes under | On the song page |
+| --- | --- | --- |
+| `.pdf` | Sheet music | Preview, Open, Download |
+| `.docx`, `.doc`, `.txt`, or "chord" in the name | Chord charts | Preview (Word files only once the site is online), Download |
+| `.mscz` | MuseScore files | Download (open in the free MuseScore app) |
+| `.mp3`, `.m4a`, `.wav` | Recordings | Player, Download |
+
+Sheet music, chord charts and MuseScore files are always public, because
+set lists link to them. Recordings follow `EVERYTHING_PUBLIC`.
 
 ---
 

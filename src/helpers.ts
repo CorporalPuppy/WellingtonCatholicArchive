@@ -105,11 +105,53 @@ export function formatFileSize(bytes: number): string {
 
 /** The kinds of music file we store, and how to show each one. */
 export const FILE_KIND_LABELS: Record<string, string> = {
-  recording: "Recording",
   sheet: "Sheet music",
   chords: "Chord chart",
+  musescore: "MuseScore file",
+  recording: "Recording",
   other: "Other",
 };
+
+/**
+ * Sheet music, chord charts and MuseScore files are always public, because
+ * set lists link to them so anyone can see what the choir will sing.
+ * Recordings and other files follow EVERYTHING_PUBLIC.
+ */
+export function isAlwaysPublicKind(kind: string): boolean {
+  return kind === "sheet" || kind === "chords" || kind === "musescore";
+}
+
+/**
+ * Guesses what kind of music file this is from its name and type, e.g.
+ * "gloria.mscz" is a MuseScore file and "gloria-chords.docx" a chord chart.
+ * Admins can still pick the kind themselves when uploading.
+ */
+export function guessFileKind(filename: string, contentType: string): string {
+  const name = filename.toLowerCase();
+
+  if (name.endsWith(".mscz") || name.endsWith(".mscx")) {
+    return "musescore";
+  }
+  if (contentType.startsWith("audio/") || name.endsWith(".mp3") || name.endsWith(".m4a") || name.endsWith(".wav")) {
+    return "recording";
+  }
+  // Word documents, text files and files with "chord" in the name.
+  if (
+    name.includes("chord") ||
+    name.endsWith(".doc") ||
+    name.endsWith(".docx") ||
+    name.endsWith(".txt") ||
+    name.endsWith(".odt") ||
+    name.endsWith(".cho") ||
+    name.endsWith(".chordpro")
+  ) {
+    return "chords";
+  }
+  if (name.endsWith(".pdf") || contentType.startsWith("image/")) {
+    return "sheet";
+  }
+  return "other";
+}
 
 // ---------------------------------------------------------------------------
 // Who is looking at the page?

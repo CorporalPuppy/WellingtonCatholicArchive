@@ -1,6 +1,7 @@
 // ===========================================================================
-// The music library: songs, and their recordings, sheet music and chord
-// charts. The files themselves are stored in R2 (Cloudflare's file storage).
+// The music library: songs, and each song's resources: sheet music PDFs,
+// chord charts, MuseScore files and recordings. The files themselves are
+// stored in R2 (Cloudflare's file storage).
 //
 // Who can see this is set by EVERYTHING_PUBLIC in wrangler.jsonc
 // ("yes" = everyone, "no" = logged-in members only).
@@ -8,10 +9,11 @@
 
 import { Hono } from "hono";
 import { getSong, getSongFile, getSongFiles, getSongs } from "../database";
-import { canSeeMemberPages, FILE_KIND_LABELS, formatFileSize } from "../helpers";
+import { canSeeMemberPages, formatFileSize, isAlwaysPublicKind } from "../helpers";
 import { sendFileFromStorage } from "../files";
 import { requireMemberAccess } from "../middleware";
 import { renderPage } from "../pages/render";
+import type { Context } from "hono";
 import type { AppEnv, SongFileRow } from "../types";
 
 const routes = new Hono<AppEnv>();
@@ -83,36 +85,124 @@ routes.get("/music/:id", async (c) => {
         </p>
       )}
 
-      <h2>Files</h2>
       {files.length === 0 && <p>No files uploaded yet.</p>}
-      <ul class="file-list">
-        {files.map((file) => (
-          <SongFileItem file={file} />
-        ))}
-      </ul>
+
+      {/* One section per kind of resource, each only shown if it has files. */}
+      {FILE_SECTIONS.map((section) => {
+        const filesInSection = files.filter((file) => file.kind === section.kind);
+        if (filesInSection.length === 0) {
+          return null;
+        }
+        return (
+          <section>
+            <h2>{section.heading}</h2>
+            {section.help !== "" && <p class="muted">{section.help}</p>}
+            <ul class="file-list">
+              {filesInSection.map((file) => (
+                <SongFileItem file={file} siteAddress={siteAddress(c)} />
+              ))}
+            </ul>
+          </section>
+        );
+      })}
     </>,
   );
 });
 
-/** One file on the song page: a player for recordings, links for the rest. */
-function SongFileItem(props: { file: SongFileRow }) {
+/** The sections on a song page, in the order they appear. */
+const FILE_SECTIONS = [
+  { kind: "sheet", heading: "Sheet music", help: "" },
+  { kind: "chords", heading: "Chord charts", help: "" },
+  {
+    kind: "musescore",
+    heading: "MuseScore files",
+    help: "Open these in the free MuseScore app (musescore.org) to play, transpose or print.",
+  },
+  { kind: "recording", heading: "Recordings", help: "" },
+  { kind: "other", heading: "Other files", help: "" },
+];
+
+/** This site's address, e.g. "https://ourchoir.nz". */
+function siteAddress(c: Context<AppEnv>): string {
+  return new URL(c.req.url).origin;
+}
+
+/**
+ * How (or whether) a file can be previewed on the page:
+ *   "audio"  - a player
+ *   "pdf"    - shown in a frame (the browser's own PDF viewer)
+ *   "image"  - shown as a picture
+ *   "text"   - shown in a frame
+ *   "office" - a Word or PowerPoint file, shown with Microsoft's free online
+ *              viewer (only works once the site is online, not on your
+ *              own computer, and only for files anyone can open)
+ *   "none"   - no preview, just download (e.g. MuseScore files)
+ */
+function previewType(file: SongFileRow): string {
+  const name = file.filename.toLowerCase();
+  const type = file.content_type;
+
+  if (type.startsWith("audio/")) return "audio";
+  if (type === "application/pdf" || name.endsWith(".pdf")) return "pdf";
+  if (type.startsWith("image/")) return "image";
+  if (type === "text/plain" || name.endsWith(".txt") || name.endsWith(".cho") || name.endsWith(".chordpro")) return "text";
+
+  const isOfficeFile = name.endsWith(".doc") || name.endsWith(".docx") || name.endsWith(".ppt") || name.endsWith(".pptx");
+  if (isOfficeFile && isAlwaysPublicKind(file.kind)) return "office";
+
+  return "none";
+}
+
+/** One file: its name, a preview (if possible) and a download button. */
+function SongFileItem(props: { file: SongFileRow; siteAddress: string }) {
   const file = props.file;
   const viewUrl = "/files/" + file.id;
   const downloadUrl = "/files/" + file.id + "?download=1";
-  const isAudio = file.content_type.startsWith("audio/");
+  const preview = previewType(file);
+
+  // Microsoft's viewer needs the full address of the file.
+  const officeViewerUrl =
+    "https://view.officeapps.live.com/op/embed.aspx?src=" + encodeURIComponent(props.siteAddress + viewUrl);
 
   return (
     <li>
-      <strong>{FILE_KIND_LABELS[file.kind]}</strong>: {file.filename}{" "}
-      <span class="muted">({formatFileSize(file.size)})</span>
-      <br />
-      {isAudio && <audio controls preload="none" src={viewUrl}></audio>}
-      {!isAudio && (
-        <a href={viewUrl} target="_blank">
-          Open
-        </a>
-      )}{" "}
-      <a href={downloadUrl}>Download</a>
+      <div class="file-row">
+        <div>
+          <strong>{file.filename}</strong> <span class="muted">({formatFileSize(file.size)})</span>
+        </div>
+        <div class="file-actions">
+          {preview !== "none" && preview !== "audio" && (
+            <a href={viewUrl} target="_blank">
+              Open
+            </a>
+          )}
+          <a href={downloadUrl} class="button button-small">
+            Download
+          </a>
+        </div>
+      </div>
+
+      {preview === "audio" && <audio controls preload="none" src={viewUrl}></audio>}
+
+      {/* <details> is a built-in show/hide box: click "Preview" to open it. */}
+      {(preview === "pdf" || preview === "text") && (
+        <details class="preview">
+          <summary>Preview</summary>
+          <iframe src={viewUrl} title={"Preview of " + file.filename} loading="lazy"></iframe>
+        </details>
+      )}
+      {preview === "image" && (
+        <details class="preview">
+          <summary>Preview</summary>
+          <img src={viewUrl} alt={"Preview of " + file.filename} loading="lazy" />
+        </details>
+      )}
+      {preview === "office" && (
+        <details class="preview">
+          <summary>Preview</summary>
+          <iframe src={officeViewerUrl} title={"Preview of " + file.filename} loading="lazy"></iframe>
+        </details>
+      )}
     </li>
   );
 }
@@ -122,9 +212,10 @@ function SongFileItem(props: { file: SongFileRow }) {
 //
 // Add ?download=1 to save the file instead of opening it.
 //
-// Sheet music and chord charts are always public, because set lists link
-// to them so anyone can see what the choir will sing. Recordings and other
-// files follow EVERYTHING_PUBLIC like the rest of the music library.
+// Sheet music, chord charts and MuseScore files are always public, because
+// set lists link to them so anyone can see what the choir will sing.
+// Recordings and other files follow EVERYTHING_PUBLIC like the rest of the
+// music library.
 // ---------------------------------------------------------------------------
 routes.get("/files/:id", async (c) => {
   const fileId = Number(c.req.param("id"));
@@ -133,8 +224,7 @@ routes.get("/files/:id", async (c) => {
     return c.text("File not found", 404);
   }
 
-  const isSheetMusic = file.kind === "sheet" || file.kind === "chords";
-  if (!isSheetMusic && !canSeeMemberPages(c)) {
+  if (!isAlwaysPublicKind(file.kind) && !canSeeMemberPages(c)) {
     return c.redirect("/login?next=" + encodeURIComponent(c.req.path));
   }
 

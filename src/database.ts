@@ -74,6 +74,33 @@ export async function getUpcomingEvents(
   return result.results;
 }
 
+/**
+ * Events between two dates (both "YYYY-MM-DD", the second one not
+ * included), soonest first. Used by the month view of the calendar.
+ */
+export async function getEventsBetween(
+  db: D1Database,
+  fromDate: string,
+  toDate: string,
+  includePrivate: boolean,
+  parishId: number | null,
+): Promise<EventRow[]> {
+  let sql = SELECT_EVENTS + " WHERE events.starts_at >= ? AND events.starts_at < ?";
+  const values: (string | number)[] = [fromDate, toDate];
+
+  if (!includePrivate) {
+    sql = sql + " AND events.is_public = 1";
+  }
+  if (parishId !== null) {
+    sql = sql + " AND events.parish_id = ?";
+    values.push(parishId);
+  }
+  sql = sql + " ORDER BY events.starts_at";
+
+  const result = await db.prepare(sql).bind(...values).all<EventRow>();
+  return result.results;
+}
+
 /** Every event, newest first (for the admin pages). */
 export async function getAllEvents(db: D1Database): Promise<EventRow[]> {
   const result = await db.prepare(SELECT_EVENTS + " ORDER BY events.starts_at DESC").all<EventRow>();
@@ -270,7 +297,8 @@ export async function getSongFiles(db: D1Database, songId: number): Promise<Song
 }
 
 /**
- * The sheet music and chord charts for every song in an event's set list,
+ * The sheet music, chord charts and MuseScore files for every song in an
+ * event's set list,
  * so the event page can link straight to them.
  */
 export async function getSheetFilesForEvent(db: D1Database, eventId: number): Promise<SongFileRow[]> {
@@ -279,7 +307,7 @@ export async function getSheetFilesForEvent(db: D1Database, eventId: number): Pr
       `SELECT song_files.*
        FROM song_files
        JOIN setlist_items ON setlist_items.song_id = song_files.song_id
-       WHERE setlist_items.event_id = ? AND song_files.kind IN ('sheet', 'chords')
+       WHERE setlist_items.event_id = ? AND song_files.kind IN ('sheet', 'chords', 'musescore')
        ORDER BY song_files.kind, song_files.filename`,
     )
     .bind(eventId)

@@ -55,7 +55,7 @@ export type SongRow = {
 export type SongFileRow = {
   id: number;
   song_id: number;
-  kind: "recording" | "sheet" | "chords" | "other";
+  kind: "sheet" | "chords" | "musescore" | "recording" | "other";
   r2_key: string;
   filename: string;
   content_type: string;
