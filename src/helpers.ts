@@ -95,6 +95,22 @@ export function addDays(date: string, days: number): string {
   return moved.toISOString().slice(0, 10);
 }
 
+/**
+ * The Church's year a date falls in. It starts on the first Sunday of
+ * Advent, so 7 December 2025 is in the year 2025-2026. Sunday readings
+ * follow a three-year cycle: Year A (2025-2026), Year B (2026-2027),
+ * Year C (2027-2028), then Year A again.
+ */
+export function liturgicalYear(date: string): { cycle: "A" | "B" | "C"; endYear: number } {
+  const year = Number(date.slice(0, 4));
+  // The first Sunday of Advent: four Sundays before Christmas.
+  const christmasWeekday = new Date(Date.UTC(year, 11, 25)).getUTCDay(); // 0 is Sunday
+  const firstSundayOfAdvent = addDays(year + "-12-25", -(christmasWeekday === 0 ? 7 : christmasWeekday) - 21);
+  const endYear = date >= firstSundayOfAdvent ? year + 1 : year;
+  const cycles = ["C", "A", "B"] as const;
+  return { cycle: cycles[endYear % 3], endYear: endYear };
+}
+
 /** True if the text looks like a date, "YYYY-MM-DD". */
 export function isValidDate(text: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(text);
