@@ -31,7 +31,8 @@ routes.use("/admin/users/*", requireAdmin);
 // Messages shown after an action, chosen by "?message=..." in the address.
 const MESSAGES: Record<string, { kind: "error" | "success"; text: string }> = {
   created: { kind: "success", text: "Account created. Let the person know their email and password." },
-  password: { kind: "success", text: "Password changed." },
+  password: { kind: "success", text: "Password changed. That person has been logged out on all their devices." },
+  "password-self": { kind: "success", text: "Your password has been changed." },
   role: { kind: "success", text: "Role changed." },
   deleted: { kind: "success", text: "Account removed." },
   "short-password": { kind: "error", text: "Passwords must be at least 10 characters." },
@@ -160,9 +161,20 @@ routes.post("/admin/users/:id/password", async (c) => {
       body: { userId: userId, newPassword: password },
       headers: c.req.raw.headers,
     });
+    // Log the person out everywhere, in case someone else knew the old
+    // password. (Not for your own account, or you'd be logged out too.)
+    if (userId !== c.get("user")!.id) {
+      await c.get("auth").api.revokeUserSessions({
+        body: { userId: userId },
+        headers: c.req.raw.headers,
+      });
+    }
   } catch (error) {
     console.error("Set password failed:", error);
     return c.redirect("/admin/users?message=failed");
+  }
+  if (userId === c.get("user")!.id) {
+    return c.redirect("/admin/users?message=password-self");
   }
   return c.redirect("/admin/users?message=password");
 });

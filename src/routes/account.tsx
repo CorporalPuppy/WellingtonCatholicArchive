@@ -50,18 +50,31 @@ routes.post("/account/password", async (c) => {
   const currentPassword = getFormText(form, "currentPassword");
   const newPassword = getFormText(form, "newPassword");
 
+  // revokeOtherSessions logs out every other device, in case someone else
+  // knew the old password. Better Auth then gives this browser a new login
+  // cookie, which we pass on so the person stays logged in here.
+  let authResponse: Response;
   try {
-    await c.get("auth").api.changePassword({
-      body: { currentPassword: currentPassword, newPassword: newPassword },
+    authResponse = await c.get("auth").api.changePassword({
+      body: { currentPassword: currentPassword, newPassword: newPassword, revokeOtherSessions: true },
       headers: c.req.raw.headers,
+      asResponse: true,
     });
   } catch (error) {
+    authResponse = new Response(null, { status: 500 });
+  }
+
+  if (!authResponse.ok) {
     const message = { kind: "error" as const, text: "Couldn't change the password. Check your current password and try again." };
     return renderPage(c, "My account", <AccountPage name={user.name} email={user.email} message={message} />, 400);
   }
 
-  const message = { kind: "success" as const, text: "Password changed." };
-  return renderPage(c, "My account", <AccountPage name={user.name} email={user.email} message={message} />);
+  const message = { kind: "success" as const, text: "Password changed. Any other devices have been logged out." };
+  const page = await renderPage(c, "My account", <AccountPage name={user.name} email={user.email} message={message} />);
+  for (const cookie of authResponse.headers.getSetCookie()) {
+    page.headers.append("Set-Cookie", cookie);
+  }
+  return page;
 });
 
 export default routes;

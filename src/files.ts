@@ -34,7 +34,11 @@ export async function sendFileFromStorage(
   headers.set("X-Content-Type-Options", "nosniff");
 
   // "attachment" = save the file, "inline" = show it in the browser.
-  const disposition = c.req.query("download") ? "attachment" : "inline";
+  // Only types that can't run scripts are shown in the browser. Anything
+  // else (an HTML page or an SVG picture, say) is always downloaded, so a
+  // bad upload can't run code on our site.
+  const showInBrowser = !c.req.query("download") && isSafeToShowInBrowser(contentType);
+  const disposition = showInBrowser ? "inline" : "attachment";
   headers.set("Content-Disposition", disposition + "; filename*=UTF-8''" + encodeURIComponent(filename));
 
   // Members-only files must not be stored by shared caches.
@@ -75,4 +79,17 @@ export async function sendFileFromStorage(
 export function makeStorageKey(folder: string, originalName: string): string {
   const safeName = originalName.replace(/[^a-zA-Z0-9._-]+/g, "-");
   return folder + "/" + crypto.randomUUID() + "-" + safeName;
+}
+
+/**
+ * The file types the browser may open on our site: PDFs, audio, plain
+ * text and ordinary pictures. Not SVG pictures, which can hold scripts.
+ */
+function isSafeToShowInBrowser(contentType: string): boolean {
+  const type = contentType.split(";")[0].trim().toLowerCase();
+  if (type.startsWith("audio/")) {
+    return true;
+  }
+  const safeTypes = ["application/pdf", "text/plain", "image/png", "image/jpeg", "image/gif", "image/webp"];
+  return safeTypes.includes(type);
 }
