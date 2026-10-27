@@ -518,3 +518,14 @@ export async function getAllUsers(db: D1Database): Promise<UserListRow[]> {
     .all<UserListRow>();
   return result.results;
 }
+
+// ---------------------------------------------------------------------------
+// Storage used
+// ---------------------------------------------------------------------------
+
+/** How many bytes all uploaded files (songs and PowerPoints) take up in R2. */
+export async function getStorageUsed(db: D1Database): Promise<number> {
+  const songFiles = await db.prepare("SELECT COALESCE(SUM(size), 0) AS total FROM song_files").first<{ total: number }>();
+  const powerpoints = await db.prepare("SELECT COALESCE(SUM(size), 0) AS total FROM powerpoints").first<{ total: number }>();
+  return (songFiles?.total ?? 0) + (powerpoints?.total ?? 0);
+}

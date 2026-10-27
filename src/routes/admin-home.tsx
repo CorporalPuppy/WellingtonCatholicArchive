@@ -3,6 +3,8 @@
 // ===========================================================================
 
 import { Hono } from "hono";
+import { getStorageUsed } from "../database";
+import { FREE_STORAGE_BYTES } from "../helpers";
 import { requireAdmin } from "../middleware";
 import { renderPage } from "../pages/render";
 import type { AppEnv } from "../types";
@@ -11,12 +13,25 @@ const routes = new Hono<AppEnv>();
 
 routes.use("/admin", requireAdmin);
 
-routes.get("/admin", (c) => {
+routes.get("/admin", async (c) => {
+  // How much of Cloudflare's free 10 GB of file storage is used.
+  const used = await getStorageUsed(c.env.DB);
+  const percent = Math.min(100, Math.round((used / FREE_STORAGE_BYTES) * 100));
+
   return renderPage(
     c,
     "Admin",
     <>
       <h1>Admin</h1>
+      <div class="storage-meter">
+        <p>
+          <strong>File storage:</strong> {(used / 1_000_000_000).toFixed(2)} GB of 10 GB free ({percent}%)
+        </p>
+        <div class="storage-bar">
+          <div class="storage-bar-fill" style={"width: " + percent + "%"}></div>
+        </div>
+        <p class="muted">Uploads stop at 9.5 GB so the site stays on Cloudflare's free plan.</p>
+      </div>
       <ul class="admin-menu">
         <li>
           <a href="/admin/events">Events, set lists and rosters</a>

@@ -28,10 +28,11 @@ import {
   findSongByTitle,
   getImportedFiles,
   getSongFileBySourcePath,
+  getStorageUsed,
   replaceSongFileContents,
 } from "../database";
 import { makeStorageKey } from "../files";
-import { FILE_KIND_LABELS, workOutContentType } from "../helpers";
+import { FILE_KIND_LABELS, workOutContentType, wouldGoOverFreeStorage } from "../helpers";
 import type { AppEnv } from "../types";
 
 const routes = new Hono<AppEnv>();
@@ -92,18 +93,29 @@ routes.post("/api/import/song-file", async (c) => {
     return c.text("already imported");
   }
 
-  const body = await c.req.arrayBuffer();
-  if (body.byteLength === 0) {
+  // The file's size, from the request. We pass the file straight on to R2
+  // instead of holding it all in memory, because the free plan only gives
+  // each request 128 MB of memory.
+  const size = Number(c.req.header("Content-Length") ?? "0");
+  const body = c.req.raw.body;
+  if (size === 0 || body === null) {
     return c.text("The file is empty.", 400);
   }
   const contentType = workOutContentType(filename, "");
+
+  // Stop before going over Cloudflare's free 10 GB of storage. A replaced
+  // file frees up the space of its old copy.
+  const freedUp = existing !== null ? existing.size : 0;
+  if (wouldGoOverFreeStorage((await getStorageUsed(c.env.DB)) - freedUp, size)) {
+    return c.text("Storage full: this file would go over Cloudflare's free 10 GB.", 507);
+  }
 
   // Edited since last time: put the new copy in R2, point the song file
   // at it, then remove the old copy.
   if (existing !== null) {
     const newR2Key = makeStorageKey("songs/" + existing.song_id, filename);
     await c.env.MUSIC.put(newR2Key, body, { httpMetadata: { contentType: contentType } });
-    await replaceSongFileContents(c.env.DB, existing.id, newR2Key, filename, contentType, body.byteLength, hash);
+    await replaceSongFileContents(c.env.DB, existing.id, newR2Key, filename, contentType, size, hash);
     await c.env.MUSIC.delete(existing.r2_key);
     return c.text("replaced the copy on song " + existing.song_id);
   }
@@ -135,7 +147,7 @@ routes.post("/api/import/song-file", async (c) => {
     r2Key: r2Key,
     filename: filename,
     contentType: contentType,
-    size: body.byteLength,
+    size: size,
     sourcePath: source,
     sourceHash: hash,
   });

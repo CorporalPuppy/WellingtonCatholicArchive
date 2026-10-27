@@ -44,6 +44,11 @@ import urllib.parse
 import urllib.request
 
 PLAN_FILE = "import_plan.csv"
+
+# Cloudflare's free plan takes at most 100 MB in one upload. We stop a
+# little below that, at 95 MB, to leave room.
+BIGGEST_FILE_BYTES = 95_000_000
+
 COLUMNS = ["status", "song_title", "kind", "key", "version", "note", "file"]
 
 # ---------------------------------------------------------------------------
@@ -197,6 +202,12 @@ def scan(music_folder):
                 rows.append(make_row(path, filename, folder_kind, folder_version))
 
     group_songs(rows)
+
+    # Cloudflare's free plan takes at most 100 MB in one upload.
+    for row in rows:
+        if row["status"] != "skip" and os.path.getsize(row["file"]) > BIGGEST_FILE_BYTES:
+            row["status"] = "skip"
+            row["note"] = "too big: Cloudflare's free plan takes files up to 95 MB"
     rows.sort(key=lambda row: (row["status"] != "check", row["song_title"].lower(), row["kind"]))
     return rows
 
@@ -347,6 +358,19 @@ def read_plan(plan_path):
     sys.exit("Couldn't read " + plan_path + ". In Excel, save it as 'CSV UTF-8'.")
 
 
+def print_total_size(rows):
+    """Says how much space the files will take, next to Cloudflare's free 10 GB."""
+    total = 0
+    for row in rows:
+        if row["status"] != "skip" and os.path.exists(row["file"]):
+            total += os.path.getsize(row["file"])
+    gigabytes = total / 1_000_000_000
+    print("  These files take {:.2f} GB. Cloudflare's free storage is 10 GB.".format(gigabytes))
+    if gigabytes > 9:
+        print("  WARNING: that's nearly all of it. The site stops uploads at 9.5 GB")
+        print("  (counting files already on the site). Mark some rows 'skip', e.g. big recordings.")
+
+
 # ---------------------------------------------------------------------------
 # Step 2: upload
 # ---------------------------------------------------------------------------
@@ -370,6 +394,10 @@ def upload(plan_path, site, token):
         path = row["file"]
         if not os.path.exists(path):
             print("  MISSING", path)
+            failed += 1
+            continue
+        if os.path.getsize(path) > BIGGEST_FILE_BYTES:
+            print("  TOO BIG (over 95 MB, the free plan's limit)", path)
             failed += 1
             continue
 
@@ -416,6 +444,8 @@ def ask_site(site, token, method, address, data=None):
         message = error.read().decode("utf-8", "replace")
         if error.code == 401:
             sys.exit("The site said the import token is wrong (or IMPORT_TOKEN isn't set on the site).")
+        if error.code == 507:
+            sys.exit("Stopped: the site's free 10 GB of storage is nearly full. Mark some rows 'skip' and try again.")
         raise RuntimeError(str(error.code) + " " + message)
     except urllib.error.URLError as error:
         raise RuntimeError("couldn't reach the site: " + str(error.reason))
@@ -445,6 +475,7 @@ def main():
             counts[row["status"]] = counts.get(row["status"], 0) + 1
         songs = {row["song_title"] for row in rows if row["status"] != "skip"}
         print("Wrote", args.plan, "-", len(rows), "files,", len(songs), "songs.")
+        print_total_size(rows)
         for status in ("ok", "check", "skip"):
             print("  " + status + ":", counts.get(status, 0))
         print('Open it in Excel, sort out the "check" rows, save, then run "upload".')

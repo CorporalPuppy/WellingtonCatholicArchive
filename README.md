@@ -424,7 +424,18 @@ like `migrations/0003_add_something.sql` with the change (e.g.
 - **Privacy:** rosters contain people's names, which is personal information
   under the NZ Privacy Act 2020. While `EVERYTHING_PUBLIC` is `"yes"`,
   anyone can see them.
-- **Free limits:** D1 allows 5 million reads and 100,000 writes a day on the
-  free plan, and R2 allows 10 GB. A choir site is far below this.
+- **Staying free:** the whole site is built to fit Cloudflare's free plans.
+
+  | Free limit | What it means here |
+  | --- | --- |
+  | Workers: 100,000 requests a day | Page visits. CSS, the icon and other files in `public/` don't count. |
+  | Workers: 10 ms of CPU per request | Why passwords use 10,000 PBKDF2 rounds (see `src/password.ts`). |
+  | Workers: 100 MB per upload, 128 MB memory | Upload music in batches under 100 MB. The import script skips files over 95 MB. |
+  | D1: 5 million rows read and 100,000 written a day, 5 GB | Far more than a choir needs. |
+  | R2: 10 GB of files, 1 million uploads and 10 million downloads a month | The site stops uploads at 9.5 GB. **Admin** shows how much is used. |
+
+  Nothing here uses a paid feature. R2 asks for a card when you turn it on,
+  but it only charges if you go over the free amounts, and the 9.5 GB stop
+  is there so you don't.
 - **Passwords** are stored scrambled (PBKDF2 hashing in `src/password.ts`),
   never as plain text.
