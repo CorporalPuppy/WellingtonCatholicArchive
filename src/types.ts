@@ -52,6 +52,7 @@ export type SongRow = {
   youtube_url: string;
   sheet_music_url: string;
   section: "music" | "prayers"; // "prayers" = Prayers and services
+  tags: string; // e.g. "Marian, Easter" ("" = none)
 };
 
 export type SongFileRow = {
@@ -103,6 +104,11 @@ export type PowerpointRow = {
   uploaded_at: string;
   event_id: number | null; // the event it was made for (null = matched by date only)
   event_title: string | null; // filled in from the events table
+  source_path: string; // where the bulk import found it ("" if uploaded by hand)
+  source_hash: string; // its fingerprint when imported
+  church: string; // the church it was made for ("" if not known)
+  text_hash: string; // fingerprint of the words on its slides (the words themselves aren't loaded)
+  snippet?: string; // search results only: words from the slides around the match
 };
 
 export type ReadingsRow = {

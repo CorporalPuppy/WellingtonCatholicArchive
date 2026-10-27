@@ -20,6 +20,23 @@ It works in steps, so nothing is uploaded until you've checked it:
      and delete the other row. The note column points out likely ones.
      Save, then run scan again. Every file is now checked against your
      list, and any file that doesn't match a song on it is marked "check".
+     The tags column takes tags for the song, with commas between them
+     (e.g. Marian, Easter). The site's Music page can be filtered by them.
+
+     To have tags suggested, add --suggest-tags to the scan:
+
+         python import_music.py scan "C:\\Users\\Elijah\\Documents\\Music" --suggest-tags
+
+     Each song on your list is looked up on hymnary.org, which knows how
+     hymnals file it (Mary, Easter, Communion...). Each song is looked up
+     only once (the answers are kept in hymnary_cache.json), slowly, so the
+     first time takes a while; later scans only look up new songs. The
+     suggestions go in tag_suggestions.csv: put "yes" in its approve
+     column for the ones you want (edit the tags first if you like), or
+     "no" to turn one down. "upload" adds the approved tags to the site.
+     Your song_list.csv isn't changed. Songs not in hymnals (most modern
+     worship songs) won't be found, and hymnary.org has nothing on style
+     (pop, rock...), so those tags are still yours to add.
 
   3. UPLOAD: open import_plan.csv in Excel, fix anything marked "check",
      save it, then upload every row marked "ok".
@@ -32,11 +49,15 @@ The status column:
   ok     the script is confident; this row will be uploaded
   check  the script isn't sure (the note says why). Fix the song title,
          key or version if needed, then change it to ok, or to skip.
-  skip   never uploaded (autosaves, backups, shortcuts, videos...)
+  skip   not on the site (autosaves, backups, shortcuts, videos...). If
+         it was uploaded before, "upload" offers to remove it.
 
-Running "upload" again is safe: the site remembers every file it already
-has and skips it. If you've edited a file since (a new chord chart, a
-fixed typo in the slides), the site's copy is replaced with the new one.
+"upload" makes the site match your folders, so after any change just run
+"scan" then "upload" again. Files that haven't changed are skipped. Edited
+files replace the site's copy. Renamed or moved files are moved on the site
+without being sent again. A changed title, key or version is updated. Files
+gone from your folders are listed, and removed once you type yes. Songs left
+with no files are kept, and listed under "Resolve now" on the admin songs page.
 Running "scan" again keeps the changes you made to rows in an existing
 import_plan.csv (a key, a version, a "skip", or an "ok" on a row the
 script had flagged), and adds any new files. New files are checked
@@ -50,9 +71,12 @@ import csv
 import difflib
 import getpass
 import hashlib
+import io
+import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -65,7 +89,7 @@ SONG_LIST_FILE = "song_list.csv"
 BIGGEST_FILE_BYTES = 95_000_000
 
 COLUMNS = ["status", "song_title", "kind", "key", "version", "found_in", "note", "file"]
-SONG_LIST_COLUMNS = ["title", "other_spellings", "found_in", "note"]
+SONG_LIST_COLUMNS = ["title", "other_spellings", "tags", "found_in", "note"]
 
 # ---------------------------------------------------------------------------
 # Your folders. Each folder name (the first folder under the music folder)
@@ -165,6 +189,7 @@ def read_file_name(stem):
         (r"\(\s*null[_ ]?(\d+)\s*\)", "Part {0}"),
         (r"\bpage\s*(\d+)\b", "Page {0}"),
         (r"\bpart\s*(\d+)\b", "Part {0}"),
+        (r"\[([^\]]{2,})\]", "{0}"),  # anything in [square brackets], e.g. [Descant]
     ]
     for pattern, label in labels:
         match = re.search(pattern, text, re.IGNORECASE)
@@ -416,6 +441,302 @@ def check_against_song_list(rows, songs):
                 row["note"] += "; " + hint
 
 
+def tidy_tags(text):
+    """
+    Tags as typed ("marian;Easter , easter") made tidy: "Marian, Easter".
+    Keep in step with tidyTags in src/helpers.ts.
+    """
+    tags = []
+    for tag in re.split(r"[,;]", text or ""):
+        tag = re.sub(r"\s+", " ", tag).strip()
+        tag = tag[:1].upper() + tag[1:]  # "marian" becomes "Marian"
+        if tag and tag.lower() not in (each.lower() for each in tags):
+            tags.append(tag)
+    return ", ".join(tags)
+
+
+def read_song_tags(list_path):
+    """Each song's tags from the tags column of song_list.csv: {title: "Marian, Easter"}."""
+    if not os.path.exists(list_path):
+        return {}
+    return {
+        (song.get("title") or "").strip(): tidy_tags(song.get("tags"))
+        for song in read_csv(list_path)
+        if (song.get("title") or "").strip() != ""
+    }
+
+
+def add_tags_column(list_path):
+    """
+    Adds an empty tags column to a song_list.csv made before tags existed.
+    Nothing else in the file is changed.
+    """
+    songs = read_csv(list_path)
+    if not songs or "tags" in songs[0]:
+        return
+    columns = list(songs[0].keys())
+    columns.insert(columns.index("other_spellings") + 1 if "other_spellings" in columns else len(columns), "tags")
+    with open(list_path, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=columns)
+        writer.writeheader()
+        for song in songs:
+            song["tags"] = ""
+            writer.writerow(song)
+    print("Added a tags column to", list_path, "(e.g. Marian, Easter, Communion).")
+
+
+# ---------------------------------------------------------------------------
+# Tag suggestions from hymnary.org (scan --suggest-tags)
+# ---------------------------------------------------------------------------
+
+SUGGESTIONS_FILE = "tag_suggestions.csv"
+HYMNARY_CACHE_FILE = "hymnary_cache.json"
+SUGGESTION_COLUMNS = ["approve", "title", "suggested_tags", "your_tags", "why", "hymnary_match", "hymnary_link"]
+
+HYMNARY = "https://hymnary.org"
+# Seconds to wait between requests, so hymnary.org isn't hammered.
+HYMNARY_PAUSE = 3
+
+# Hymnals on hymnary.org list each hymn under subjects such as
+# "Blessed Virgin Mary" or "Eucharist | Communion". A subject containing
+# any of these words suggests the tag on the left. Add your own here.
+TAG_WORDS = {
+    "Marian": ["mary", "marian", "blessed virgin", "rosary", "assumption", "immaculate", "mother of god", "annunciation", "our lady"],
+    "Advent": ["advent"],
+    "Christmas": ["christmas", "nativity", "incarnation", "holy family"],
+    "Epiphany": ["epiphany"],
+    "Lent": ["lent", "lenten", "ash wednesday"],
+    "Holy Week": ["holy week", "palm sunday", "passion sunday", "holy thursday", "good friday", "triduum"],
+    "Easter": ["easter", "resurrection"],
+    "Pentecost": ["pentecost"],
+    "Holy Spirit": ["holy spirit"],
+    "Communion": ["communion", "eucharist", "lord's supper", "body and blood", "corpus christi"],
+    "Entrance": ["gathering", "entrance", "opening hymn"],
+    "Sending": ["sending forth", "recessional", "dismissal", "closing hymn"],
+    "Christ the King": ["christ the king"],
+    "Saints": ["all saints", "saints"],
+    "Baptism": ["baptism"],
+    "Wedding": ["marriage", "wedding"],
+    "Funeral": ["funeral"],
+    "Thanksgiving": ["thanksgiving"],
+}
+
+# A tag is suggested when at least this many hymnals, and at least this
+# share of the hymnals that give subjects, file the song under it. One
+# hymnal's long list of subjects isn't enough on its own.
+FEWEST_HYMNALS = 2
+SMALLEST_SHARE = 0.25
+
+# Labels hymnary.org puts before each detail of a hymn or a hymnal's copy of it.
+HYMNARY_LABELS = [
+    "Display Title", "First Line", "Refrain First Line", "Title", "Latin Title", "Tune Title",
+    "Author", "Translator", "Composer", "Arranger", "Meter", "Date", "Subject", "Topics",
+    "Source", "Scripture", "Language", "Languages", "Copyright", "Notes", "Tune Key",
+    "Tune Information", "Text Information", "Incipit", "Page Scans", "Full Text",
+]
+
+
+def ask_hymnary(path):
+    """Fetches a page from hymnary.org, pausing first. Retries once if asked to slow down."""
+    for attempt in (1, 2):
+        time.sleep(HYMNARY_PAUSE)
+        request = urllib.request.Request(HYMNARY + path, headers={
+            "User-Agent": "Choir song list tagger (one lookup per song, cached)",
+        })
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                return response.read().decode("utf-8", "replace")
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                return ""
+            if error.code in (429, 503) and attempt == 1:
+                print("  hymnary.org asked us to slow down; waiting a minute.")
+                time.sleep(60)
+                continue
+            raise RuntimeError("hymnary.org answered " + str(error.code))
+        except urllib.error.URLError as error:
+            raise RuntimeError("couldn't reach hymnary.org: " + str(error.reason))
+    raise RuntimeError("hymnary.org is busy; try again later")
+
+
+def find_on_hymnary(title):
+    """
+    Searches hymnary.org for the title. Returns (its title there, its page
+    path such as "/text/hail_holy_queen_enthroned_above_o_mar"), or None.
+    Only a close match on the title counts.
+    """
+    query = urllib.parse.urlencode({"qu": title + " in:texts", "export": "csv"})
+    found = list(csv.DictReader(io.StringIO(ask_hymnary("/search?" + query))))
+    wanted = match_key(re.sub(r"\(.*?\)", "", title))
+    best, best_score = None, 0.85  # anything less alike isn't the same song
+    for row in found:  # most likely first
+        number = (row.get("textAuthNumber") or "").strip()
+        if not number:
+            continue
+        for name in (row.get("displayTitle"), row.get("textTitle"), row.get("firstLine")):
+            name = match_key(re.sub(r"\(.*?\)", "", name or ""))
+            if name == wanted:
+                score = 1.0
+            elif name.startswith(wanted + " "):
+                score = 0.95  # "Hail Holy Queen" is "Hail, Holy Queen Enthroned Above"
+            else:
+                score = difflib.SequenceMatcher(None, wanted, name).ratio()
+            if score > best_score:
+                best, best_score = ((row.get("displayTitle") or "").strip(), "/text/" + number), score
+    return best
+
+
+def page_text(html):
+    """A page's words without the HTML, on one line."""
+    html = re.sub(r"(?is)<(script|style)\b.*?</\1>", " ", html)
+    text = re.sub(r"<[^>]+>", " ", html)
+    for code, letter in (("&amp;", "&"), ("&#039;", "'"), ("&#39;", "'"), ("&quot;", '"'), ("&nbsp;", " "), ("&rsquo;", "'")):
+        text = text.replace(code, letter)
+    return re.sub(r"\s+", " ", text)
+
+
+def read_subjects(html):
+    """
+    Every "Subject:" (and "Topics:") on a hymn's page, one list per hymnal:
+    [["Blessed Virgin Mary", "Assumption of Mary"], ["Marian"], ...]
+    """
+    text = page_text(html)
+    next_label = "|".join(re.escape(label) for label in HYMNARY_LABELS)
+    pattern = re.compile(r"\b(?:Subject|Topics)\s*:\s*(.*?)(?=\b(?:" + next_label + r")\s*:|$)")
+    hymnals = []
+    for found in pattern.finditer(text):
+        subjects = []
+        for part in re.split(r"[;|]", found.group(1)):
+            part = part.strip(" ,.")
+            if part and part.lower() not in ("more", "more..."):
+                subjects.append(part)
+        if subjects:
+            hymnals.append(subjects)
+    return hymnals
+
+
+def tags_for_subjects(hymnals):
+    """
+    Turns each hymnal's subjects into tags, and keeps the tags enough
+    hymnals agree on. Returns (["Marian", "Easter"], "Marian: 7 of 9 hymnals; ...").
+    """
+    counts = {}
+    for subjects in hymnals:
+        found = set()
+        for subject in subjects:
+            for tag, words in TAG_WORDS.items():
+                if any(re.search(r"\b" + re.escape(word) + r"\b", subject.lower()) for word in words):
+                    found.add(tag)
+        for tag in found:
+            counts[tag] = counts.get(tag, 0) + 1
+    tags = [
+        tag for tag in TAG_WORDS
+        if counts.get(tag, 0) >= FEWEST_HYMNALS and counts[tag] >= SMALLEST_SHARE * len(hymnals)
+    ]
+    why = "; ".join("{}: {} of {} hymnals".format(tag, counts[tag], len(hymnals)) for tag in tags)
+    return tags, why
+
+
+def look_up_song(title):
+    """Everything hymnary.org says about one song, for the cache."""
+    match = find_on_hymnary(title)
+    if match is None:
+        return {"found": False}
+    name, path = match
+    hymnals = read_subjects(ask_hymnary(path))
+    return {"found": True, "match": name, "link": HYMNARY + path, "subjects": hymnals}
+
+
+def read_cache(cache_path):
+    if not os.path.exists(cache_path):
+        return {}
+    with open(cache_path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def write_cache(cache, cache_path):
+    with open(cache_path + ".new", "w", encoding="utf-8") as f:
+        json.dump(cache, f, indent=1, ensure_ascii=False)
+    os.replace(cache_path + ".new", cache_path)
+
+
+def suggest_tags(songs_path, suggestions_path, cache_path):
+    """
+    Looks up each song in song_list.csv on hymnary.org (only songs not
+    looked up before: the answers are kept in hymnary_cache.json) and
+    writes tag_suggestions.csv for you to approve. song_list.csv isn't
+    changed. Rows you've already approved or turned down are kept as they are.
+    """
+    titles = [title for title in read_song_tags(songs_path)]
+    cache = read_cache(cache_path)
+    to_look_up = [title for title in titles if match_key(title) not in cache]
+    if to_look_up:
+        minutes = len(to_look_up) * 2 * HYMNARY_PAUSE / 60
+        print("Looking up", len(to_look_up), "songs on hymnary.org (about", round(minutes), "minutes).")
+        print("You can stop it with Ctrl+C; songs already looked up are remembered.")
+    for number, title in enumerate(to_look_up, 1):
+        try:
+            cache[match_key(title)] = look_up_song(title)
+        except RuntimeError as error:
+            print("  Stopped at", title, "-", error)
+            print("  Run scan --suggest-tags again later to carry on.")
+            break
+        except KeyboardInterrupt:
+            print("\n  Stopped. Run scan --suggest-tags again to carry on.")
+            break
+        finally:
+            write_cache(cache, cache_path)
+        answer = cache[match_key(title)]
+        print("  {}/{} {} - {}".format(number, len(to_look_up), title,
+                                      "found" if answer["found"] else "not on hymnary.org"))
+
+    earlier = {}
+    if os.path.exists(suggestions_path):
+        for row in read_csv(suggestions_path):
+            if (row.get("approve") or "").strip():
+                earlier[match_key(row.get("title") or "")] = row
+
+    your_tags = read_song_tags(songs_path)
+    rows = []
+    for title in titles:
+        if match_key(title) in earlier:
+            rows.append(earlier[match_key(title)])
+            continue
+        answer = cache.get(match_key(title))
+        if not answer or not answer["found"]:
+            continue
+        tags, why = tags_for_subjects(answer["subjects"])
+        mine = [tag.lower() for tag in your_tags[title].split(", ") if tag]
+        new = [tag for tag in tags if tag.lower() not in mine]
+        if not new:
+            continue
+        rows.append({
+            "approve": "", "title": title, "suggested_tags": ", ".join(new), "your_tags": your_tags[title],
+            "why": why, "hymnary_match": answer["match"], "hymnary_link": answer["link"],
+        })
+    rows.sort(key=lambda row: (bool((row.get("approve") or "").strip()), row["title"].lower()))
+    with open(suggestions_path, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=SUGGESTION_COLUMNS, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+    waiting = sum(1 for row in rows if not (row.get("approve") or "").strip())
+    print("Wrote", suggestions_path, "-", waiting, "songs with tags to approve.")
+    if waiting:
+        print('Put "yes" in the approve column for the ones you want (edit suggested_tags first')
+        print('if you like), or "no" to turn one down. "upload" adds the approved tags.')
+
+
+def read_approved_tags(suggestions_path):
+    """Approved rows of tag_suggestions.csv: {title: "Marian, Easter"}."""
+    if not os.path.exists(suggestions_path):
+        return {}
+    return {
+        (row.get("title") or "").strip(): tidy_tags(row.get("suggested_tags"))
+        for row in read_csv(suggestions_path)
+        if (row.get("approve") or "").strip().lower() in ("yes", "y", "ok")
+    }
+
+
 def write_first_song_list(rows, list_path):
     """
     Makes song_list.csv from the files the first time you scan: one row per
@@ -446,6 +767,7 @@ def write_first_song_list(rows, list_path):
             writer.writerow({
                 "title": title,
                 "other_spellings": "; ".join(sorted(song["spellings"])),
+                "tags": "",
                 "found_in": song["found_in"],
                 "note": "; ".join(notes),
             })
@@ -522,62 +844,207 @@ def print_total_size(rows):
 # Step 2: upload
 # ---------------------------------------------------------------------------
 
-def upload(plan_path, site, token):
+def upload(plan_path, site, token, songs_path, suggestions_path):
+    """
+    Makes the site match your music folders:
+      - new files are uploaded
+      - edited files replace the site's copy
+      - renamed or moved files (same contents, new place) are moved on the
+        site without uploading them again
+      - a changed song title, kind, key or version is updated
+      - files gone from your folders (or marked "skip") are removed from
+        the site, after you say yes
+      - tags in song_list.csv, and approved ones in tag_suggestions.csv,
+        are set on their songs
+    Rows still marked "check" are left alone.
+    """
     rows = read_plan(plan_path)
-    to_upload = [row for row in rows if row["status"].strip().lower() == "ok"]
+    plan = {row["file"]: row for row in rows}
 
-    # What the site already has: each file's path and its fingerprint.
+    # What the site already has, one line per file.
     on_site = {}
     for line in ask_site(site, token, "GET", "/api/import/done").splitlines():
-        if "\t" in line:
-            fingerprint, path = line.split("\t", 1)
-            on_site[path] = fingerprint
+        parts = line.split("\t")
+        if len(parts) >= 6:
+            fingerprint, path, title, kind, key, version = parts[:6]
+            on_site[path] = {"hash": fingerprint, "title": title, "kind": kind, "key": key, "version": version}
 
-    print(len(to_upload), "rows marked ok,", len(on_site), "files already on the site.")
-    uploaded = 0
-    replaced = 0
-    failed = 0
-    for number, row in enumerate(to_upload, start=1):
+    # The files you want on the site, with their fingerprints.
+    wanted = []
+    for row in rows:
+        if row["status"].strip().lower() != "ok":
+            continue
         path = row["file"]
         if not os.path.exists(path):
-            print("  MISSING", path)
-            failed += 1
-            continue
+            continue  # gone since the last scan; dealt with below
         if os.path.getsize(path) > BIGGEST_FILE_BYTES:
             print("  TOO BIG (over 95 MB, the free plan's limit)", path)
-            failed += 1
             continue
+        row["fingerprint"] = file_fingerprint(path)
+        wanted.append(row)
 
-        with open(path, "rb") as f:
-            data = f.read()
-        fingerprint = hashlib.sha256(data).hexdigest()
-        if on_site.get(path) == fingerprint:
-            continue  # on the site already, and not edited since
+    # Files on the site that shouldn't be any more: not in the plan, marked
+    # "skip", or no longer on your computer.
+    gone = []
+    for path in on_site:
+        row = plan.get(path)
+        status = row["status"].strip().lower() if row else ""
+        if row is None or status == "skip" or not os.path.exists(path):
+            gone.append(path)
 
-        details = {
-            "title": row["song_title"].strip(),
-            "kind": row["kind"].strip(),
-            "key": row["key"].strip(),
-            "version": row["version"].strip(),
-            "filename": os.path.basename(path),
-            "source": path,
-            "hash": fingerprint,
-            "section": section_for(path),
-        }
-        try:
-            answer = ask_site(site, token, "POST", "/api/import/song-file?" + urllib.parse.urlencode(details), data)
-            print("  [" + str(number) + "/" + str(len(to_upload)) + "]", details["title"], "-", details["filename"], "-", answer)
-            if path in on_site:
-                replaced += 1
+    # Sort out what to do with each file.
+    gone_by_fingerprint = {}
+    for path in gone:
+        gone_by_fingerprint.setdefault(on_site[path]["hash"], []).append(path)
+    to_move, to_relabel, to_replace, to_add = [], [], [], []
+    for row in wanted:
+        path = row["file"]
+        site_copy = on_site.get(path)
+        if site_copy is None:
+            # Same contents as a file that's gone? Then it was renamed or moved.
+            old_paths = gone_by_fingerprint.get(row["fingerprint"])
+            if old_paths:
+                to_move.append((old_paths.pop(), row))
             else:
-                uploaded += 1
-        except RuntimeError as error:
-            print("  FAILED", path, "-", error)
-            failed += 1
+                to_add.append(row)
+        elif site_copy["hash"] != row["fingerprint"]:
+            to_replace.append(row)
+        elif labels_differ(site_copy, row):
+            to_relabel.append(row)
+    moved_from = {old_path for old_path, _ in to_move}
+    to_delete = [path for path in gone if path not in moved_from]
 
-    print("Done.", uploaded, "new,", replaced, "replaced (edited since last time),", failed, "failed.")
+    print("On the site:", len(on_site), "files. Changes:")
+    print("  new:", len(to_add), " edited:", len(to_replace), " renamed or moved:", len(to_move),
+          " new title/kind/key/version:", len(to_relabel), " to remove:", len(to_delete))
+
+    failed = 0
+    for old_path, row in to_move:
+        failed += send_update(site, token, row, old_path)
+    for row in to_relabel:
+        failed += send_update(site, token, row, row["file"])
+    for number, row in enumerate(to_replace + to_add, start=1):
+        failed += send_file(site, token, row, number, len(to_replace) + len(to_add))
+
+    if to_delete:
+        print()
+        print("These", len(to_delete), "files are on the site but gone from your folders (or marked skip):")
+        for path in to_delete[:30]:
+            print("   ", on_site[path]["title"], "-", os.path.basename(path))
+        if len(to_delete) > 30:
+            print("    ...and", len(to_delete) - 30, "more")
+        answer = input("Remove them from the site? Type yes to remove, anything else to keep: ")
+        if answer.strip().lower() == "yes":
+            for path in to_delete:
+                try:
+                    print("  ", ask_site(site, token, "POST", "/api/import/delete?" + urllib.parse.urlencode({"source": path})),
+                          "-", os.path.basename(path))
+                except RuntimeError as error:
+                    print("  FAILED", path, "-", error)
+                    failed += 1
+        else:
+            print("  Kept them. They'll be listed again next time.")
+
+    failed += send_tags(site, token, songs_path, suggestions_path)
+
     if failed:
+        print("Done, but", failed, "failed.")
         print("Run the upload again to retry the failed ones.")
+    else:
+        print("Done.")
+    print("Songs left with no files show under 'Resolve now' on the site's admin songs page.")
+
+
+def send_tags(site, token, songs_path, suggestions_path):
+    """
+    Sends the tags in song_list.csv, plus approved ones from
+    tag_suggestions.csv, for songs whose tags on the site are different.
+    Songs already on the site get them too; no files are sent.
+    Returns how many failed.
+    """
+    wanted = read_song_tags(songs_path)
+    for title, tags in read_approved_tags(suggestions_path).items():
+        if title in wanted:
+            wanted[title] = tidy_tags(wanted[title] + ", " + tags)
+    on_site = {}
+    for line in ask_site(site, token, "GET", "/api/import/song-tags").splitlines():
+        title, _, tags = line.partition("\t")
+        on_site[title.strip().lower()] = tags
+    failed = changed = 0
+    for title, tags in wanted.items():
+        site_tags = on_site.get(title.lower())
+        if site_tags is None or site_tags == tags:
+            continue  # not on the site yet, or nothing to change
+        try:
+            ask_site(site, token, "POST", "/api/import/song-tags?" + urllib.parse.urlencode({"title": title, "tags": tags}))
+            changed += 1
+        except RuntimeError as error:
+            print("  FAILED to set the tags of", title, "-", error)
+            failed += 1
+    if changed:
+        print("  New tags on", changed, "songs.")
+    return failed
+
+
+def file_fingerprint(path):
+    """The SHA-256 of a file's contents, read a bit at a time to save memory."""
+    sha = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1024 * 1024), b""):
+            sha.update(block)
+    return sha.hexdigest()
+
+
+def labels_differ(site_copy, row):
+    """True if you changed the song title, kind, key or version of a file."""
+    return (
+        site_copy["title"].strip().lower() != row["song_title"].strip().lower()
+        or site_copy["kind"] != row["kind"].strip()
+        or site_copy["key"] != row["key"].strip()
+        or site_copy["version"] != row["version"].strip()
+    )
+
+
+def file_details(row):
+    path = row["file"]
+    return {
+        "title": row["song_title"].strip(),
+        "kind": row["kind"].strip(),
+        "key": row["key"].strip(),
+        "version": row["version"].strip(),
+        "filename": os.path.basename(path),
+        "section": section_for(path),
+    }
+
+
+def send_update(site, token, row, old_path):
+    """Moves or relabels a file on the site, without uploading it. Returns 1 if it failed."""
+    details = file_details(row)
+    details["source"] = old_path
+    details["new_source"] = row["file"]
+    try:
+        answer = ask_site(site, token, "POST", "/api/import/update?" + urllib.parse.urlencode(details))
+        print("  ", details["title"], "-", details["filename"], "-", answer)
+        return 0
+    except RuntimeError as error:
+        print("  FAILED", row["file"], "-", error)
+        return 1
+
+
+def send_file(site, token, row, number, total):
+    """Uploads a new or edited file. Returns 1 if it failed."""
+    details = file_details(row)
+    details["source"] = row["file"]
+    details["hash"] = row["fingerprint"]
+    with open(row["file"], "rb") as f:
+        data = f.read()
+    try:
+        answer = ask_site(site, token, "POST", "/api/import/song-file?" + urllib.parse.urlencode(details), data)
+        print("  [" + str(number) + "/" + str(total) + "]", details["title"], "-", details["filename"], "-", answer)
+        return 0
+    except RuntimeError as error:
+        print("  FAILED", row["file"], "-", error)
+        return 1
 
 
 def section_for(path):
@@ -592,7 +1059,9 @@ def ask_site(site, token, method, address, data=None):
     request = urllib.request.Request(site.rstrip("/") + address, data=data, method=method)
     request.add_header("Authorization", "Bearer " + token)
     request.add_header("User-Agent", "choir-music-import/1.0")
-    if data is not None:
+    if method == "POST":
+        # Always say what's being sent, even with no file: the site turns
+        # away POSTs without it (a safety check against forged web forms).
         request.add_header("Content-Type", "application/octet-stream")
     try:
         with urllib.request.urlopen(request, timeout=300) as response:
@@ -618,10 +1087,16 @@ def main():
     scan_step.add_argument("folder", help="the music folder, holding 'Music Chords', 'Scores' and so on")
     scan_step.add_argument("--plan", default=PLAN_FILE)
     scan_step.add_argument("--songs", default=SONG_LIST_FILE, help="your song list (made on the first scan)")
+    scan_step.add_argument("--suggest-tags", action="store_true",
+                           help="also look up new songs on hymnary.org and suggest tags in tag_suggestions.csv")
+    scan_step.add_argument("--suggestions", default=SUGGESTIONS_FILE)
+    scan_step.add_argument("--cache", default=HYMNARY_CACHE_FILE)
 
     upload_step = steps.add_parser("upload", help="upload every row marked ok")
     upload_step.add_argument("--site", required=True, help="e.g. https://ourchoir.nz")
     upload_step.add_argument("--plan", default=PLAN_FILE)
+    upload_step.add_argument("--songs", default=SONG_LIST_FILE, help="your song list (for its tags column)")
+    upload_step.add_argument("--suggestions", default=SUGGESTIONS_FILE, help="tag suggestions, for the approved ones")
 
     args = parser.parse_args()
 
@@ -632,6 +1107,7 @@ def main():
             count = write_first_song_list(rows, args.songs)
             songs = {}
         else:
+            add_tags_column(args.songs)
             songs = read_song_list(args.songs)
             check_against_song_list(rows, songs)
         rows = keep_earlier_edits(rows, args.plan, songs)
@@ -652,9 +1128,14 @@ def main():
         else:
             print("Checked every file against", args.songs + ".")
             print('Open', args.plan, 'in Excel, sort out the "check" rows, save, then run "upload".')
+        if args.suggest_tags:
+            if first_time:
+                print("Tag suggestions wait until song_list.csv is tidied: run scan --suggest-tags again then.")
+            else:
+                suggest_tags(args.songs, args.suggestions, args.cache)
     else:
         token = os.environ.get("IMPORT_TOKEN") or getpass.getpass("Import token: ")
-        upload(args.plan, args.site, token)
+        upload(args.plan, args.site, token, args.songs, args.suggestions)
 
 
 if __name__ == "__main__":

@@ -4,3 +4,5 @@ node_modules
 dist/
 import_plan.csv
 song_list.csv
+slides_plan.csv
+__pycache__/

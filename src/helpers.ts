@@ -95,6 +95,96 @@ export function addDays(date: string, days: number): string {
   return moved.toISOString().slice(0, 10);
 }
 
+/** The first Sunday of Advent in this calendar year: four Sundays before Christmas. */
+function firstSundayOfAdvent(year: number): string {
+  const christmasWeekday = new Date(Date.UTC(year, 11, 25)).getUTCDay(); // 0 is Sunday
+  return addDays(year + "-12-25", -(christmasWeekday === 0 ? 7 : christmasWeekday) - 21);
+}
+
+/** Easter Sunday, "YYYY-MM-DD" (the usual calculation for the Western church). */
+function easterSunday(year: number): string {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return year + "-" + String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+}
+
+/**
+ * The Church's year a date falls in. It starts on the first Sunday of
+ * Advent, so 7 December 2025 is in the year 2025-2026. Sunday readings
+ * follow a three-year cycle: Year A (2025-2026), Year B (2026-2027),
+ * Year C (2027-2028), then Year A again.
+ */
+export function liturgicalYear(date: string): { cycle: "A" | "B" | "C"; endYear: number } {
+  const year = Number(date.slice(0, 4));
+  const endYear = date >= firstSundayOfAdvent(year) ? year + 1 : year;
+  const cycles = ["C", "A", "B"] as const;
+  return { cycle: cycles[endYear % 3], endYear: endYear };
+}
+
+export const SEASONS = ["Advent", "Christmas", "Lent", "Easter", "Ordinary Time"] as const;
+export type Season = (typeof SEASONS)[number];
+
+/**
+ * The season a date falls in, as kept in New Zealand. Christmas runs to
+ * the Baptism of the Lord (the Sunday after the Epiphany, which is the
+ * Sunday between 2 and 8 January; or the Monday if that's the 7th or 8th).
+ * Lent runs from Ash Wednesday to Holy Saturday, Easter to Pentecost.
+ */
+export function liturgicalSeason(date: string): Season {
+  const year = Number(date.slice(0, 4));
+  if (date >= firstSundayOfAdvent(year)) {
+    return date >= year + "-12-25" ? "Christmas" : "Advent";
+  }
+  const epiphanyWeekday = new Date(Date.UTC(year, 0, 2)).getUTCDay();
+  const epiphany = addDays(year + "-01-02", (7 - epiphanyWeekday) % 7);
+  const baptism = Number(epiphany.slice(8, 10)) >= 7 ? addDays(epiphany, 1) : addDays(epiphany, 7);
+  if (date <= baptism) {
+    return "Christmas";
+  }
+  const easter = easterSunday(year);
+  if (date >= addDays(easter, -46) && date < easter) {
+    return "Lent";
+  }
+  if (date >= easter && date <= addDays(easter, 49)) {
+    return "Easter";
+  }
+  return "Ordinary Time";
+}
+
+/**
+ * Tags as typed ("marian;Easter , easter") made tidy: each starting with a
+ * capital, one comma and space between them, no repeats, nothing empty.
+ * "Marian, Easter". Keep in step with tidy_tags in tools/import_music.py.
+ */
+export function tidyTags(text: string): string {
+  const tags: string[] = [];
+  for (const tag of text.split(/[,;]/)) {
+    let tidy = tag.trim().replace(/\s+/g, " ");
+    tidy = tidy.charAt(0).toUpperCase() + tidy.slice(1); // "marian" becomes "Marian"
+    if (tidy !== "" && !tags.some((each) => each.toLowerCase() === tidy.toLowerCase())) {
+      tags.push(tidy);
+    }
+  }
+  return tags.join(", ");
+}
+
+/** The tags of a song as a list: "Marian, Easter" gives ["Marian", "Easter"]. */
+export function splitTags(tags: string): string[] {
+  return tags === "" ? [] : tags.split(", ");
+}
+
 /** True if the text looks like a date, "YYYY-MM-DD". */
 export function isValidDate(text: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(text);

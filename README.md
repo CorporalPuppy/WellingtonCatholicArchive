@@ -377,6 +377,26 @@ Python's built-in libraries.
    "Let My Tongue Be Silenced"), keep one, add the other spelling to it and
    delete the other row. `found_in` shows which kinds of file each song
    has (just for your information: a song with only chords is fine). The script never changes this file again, so your fixes stick.
+   The `tags` column takes tags for each song, with commas between them
+   (e.g. `Marian, Easter, Communion`). They show on the Music page, which
+   can be filtered by tag. A song list made before tags existed gets an
+   empty `tags` column on the next scan. Tags can also be set on a song's
+   admin page.
+
+   To have tags suggested, scan with `--suggest-tags`. Each song on the
+   list is looked up on hymnary.org, which records how hymnals file it
+   (Mary, Easter, Communion...). Answers are kept in `hymnary_cache.json`,
+   so each song is looked up once, with a 3 second pause between requests
+   (the first run takes about 45 minutes for 450 songs and can be stopped
+   with Ctrl+C and carried on later). Suggestions go in
+   `tag_suggestions.csv`: put `yes` in its `approve` column for the ones
+   you want (edit the tags first if you like), or `no` to turn one down.
+   `upload` adds approved tags to the song's tags on the site, and
+   `song_list.csv` isn't changed. Modern worship songs usually aren't on
+   hymnary.org, and it has no style tags (pop, rock), so those stay yours
+   to add. The words that map hymnal subjects to tags are in `TAG_WORDS`
+   at the top of that part of the script. Delete `hymnary_cache.json` to
+   look everything up again.
 4. Scan again. Now every file is checked against your song list, and any
    file that doesn't match a song on it is marked `check`. New songs later
    just need a row in the list.
@@ -397,12 +417,22 @@ need. For example: `Amazing Grace - Key of G.pdf`,
 exactly as in `song_list.csv`, and give each copy its own version
 (`v2`, `Capo 3`, `Page 2`) rather than Windows' "(2)" or "- Copy".
 
-Running either step again is safe: `scan` keeps what you changed in the
-spreadsheet, and `upload` skips files the site already has. If you've
-edited a file on your computer since it was uploaded, `upload` replaces the
-site's copy with the new one (it compares a "fingerprint" of each file's
-contents). So to update the site after changing your music, just run
-`scan` and `upload` again.
+Running either step again is safe. After any change to your music, just run
+`scan` then `upload` again, and `upload` makes the site match your folders:
+
+- unchanged files are skipped
+- edited files replace the site's copy (it compares a "fingerprint" of each
+  file's contents)
+- renamed or moved files are moved on the site without being sent again
+- a changed song title, key or version (in either spreadsheet) is updated
+- tags from `song_list.csv` are set on their songs, including songs uploaded
+  before (no files are sent again for that)
+- files gone from your folders, or marked `skip`, are listed, and removed
+  from the site once you type `yes`
+
+Songs left with no files are kept, in case they're in a set list. They show
+under **Resolve now** at the top of the admin songs page, together with
+songs whose titles differ only in capitals or punctuation.
 
 To change a single file by hand, use **Replace** under that file on the
 song's admin page. It keeps the file's kind, key and version. Your music
@@ -419,6 +449,53 @@ month. Keep an eye on R2's 10 GB storage limit if you add lots of
 recordings, since audio is much bigger than sheet music. If you don't
 want the import switched on, delete the secret afterwards with
 `npx wrangler secret delete IMPORT_TOKEN`.
+
+### Importing Sunday and service PowerPoints
+
+`tools/import_slides.py` does the same for the PowerPoints from Masses and
+services. They go in the PowerPoint archive under the date they were used,
+so each one shows on that day's events. It reads the folders in
+`SLIDES_FOLDERS` at the top of the script (`Sunday Mass Presentations`, with
+everything inside it) and any PowerPoints sitting loose in the folder you
+give it. It uses the same import code as the music.
+
+1. Scan: `python tools/import_slides.py scan "C:\Users\Elijah\Documents\Music"`
+   This writes `slides_plan.csv`, one row per file.
+2. Open it in Excel. The script works out the date from the name and the
+   Year folder: `15th Sunday in Ordinary Time - St Teresa's Church` in
+   `Year A - 2026` becomes 12 July 2026. It knows the Sundays of Advent,
+   Lent, Easter and Ordinary Time, the big feasts (kept as in New Zealand,
+   e.g. the Epiphany and the Ascension on a Sunday) and the days of Simbang
+   Gabi. A date in the name works too (`20260531`, `29-03-2026`,
+   `July 24 2026`). Rows marked `check` have no date it could work out,
+   such as an ordination or a retreat: type the date, change `check` to
+   `ok`, or mark it `skip`. You can also change any title or date.
+3. Upload: `python tools/import_slides.py upload --site https://your-site`
+
+As with the music, run `scan` then `upload` again after any change: edited
+files replace the site's copy, moved ones are moved, a new title or date is
+updated, and removed ones are taken off once you type `yes`. A new year's
+folder just needs to be called `Year B - 2027` and so on.
+
+`upload` also sends the words on each deck's slides (song titles, lyrics,
+readings), and the `church` column is filled in from the name (the list
+is `CHURCHES` at the top of the script). On the PowerPoints page:
+
+- the **search** finds words in titles and on the slides, in any order,
+  best match first, with the matching words highlighted. "teresas" finds
+  "St Teresa's" and "maori" finds "Māori". Old `.ppt` files are found by
+  title only, since their words can't be read without extra software.
+- **filters** narrow it to Year A, B or C, a season (worked out from the
+  date) and a church.
+
+The search uses SQLite's built-in full-text search (FTS5). One catch:
+`wrangler d1 export` can't export a database with a search index in it.
+To back up, drop the index first and put it back afterwards (see
+`migrations/0009_powerpoint_search.sql`).
+
+PowerPoints you use again and again, like the Holy Rosary or the Stations
+of the Cross, belong on the Prayers and services page instead: put them in
+the music library's prayers folder and import them with `import_music.py`.
 
 ---
 

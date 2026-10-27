@@ -14,7 +14,7 @@
 import { Hono } from "hono";
 import { getAllSongFileSummaries, getSong, getSongFile, getSongFiles, getSongs } from "../database";
 import type { SongFileSummary } from "../database";
-import { canSeeMemberPages, describeFileLabels, formatFileSize, isAlwaysPublicKind } from "../helpers";
+import { canSeeMemberPages, describeFileLabels, formatFileSize, isAlwaysPublicKind, splitTags } from "../helpers";
 import { sendFileFromStorage } from "../files";
 import { requireMemberAccess } from "../middleware";
 import { renderPage } from "../pages/render";
@@ -32,6 +32,7 @@ routes.use("/prayers/*", requireMemberAccess);
 
 // ---------------------------------------------------------------------------
 // List of songs, with a search box: GET /music?search=amazing
+//   and a tag filter:                GET /music?tag=Marian
 // List of prayers and services:      GET /prayers?search=creed
 // ---------------------------------------------------------------------------
 routes.get("/music", async (c) => {
@@ -47,10 +48,18 @@ async function showSongList(c: Context<AppEnv>, section: "music" | "prayers") {
   // ?has=sheet shows only songs with sheet music (or chords, recording...).
   const has = c.req.query("has") ?? "";
   const filter = RESOURCE_FILTERS.find((item) => item.kind === has) ?? null;
+  // ?tag=Marian shows only songs with that tag.
+  const tag = c.req.query("tag") ?? "";
   const allSongs = await getSongs(c.env.DB, search, section);
+  // Every tag used in this section, for the tag menu.
+  const allTags = [...new Set(allSongs.flatMap((song) => splitTags(song.tags)))].sort((a, b) => a.localeCompare(b));
   const filesBySong = groupFilesBySong(await getAllSongFileSummaries(c.env.DB));
   const filesOf = (song: SongRow) => filesBySong.get(song.id) ?? [];
-  const songs = filter === null ? allSongs : allSongs.filter((song) => filesOf(song).some((file) => file.kind === filter.kind));
+  const songs = allSongs.filter(
+    (song) =>
+      (filter === null || filesOf(song).some((file) => file.kind === filter.kind)) &&
+      (tag === "" || splitTags(song.tags).includes(tag)),
+  );
   const isPrayers = section === "prayers";
   const address = isPrayers ? "/prayers" : "/music";
   const groups = groupByFirstLetter(songs);
@@ -60,6 +69,7 @@ async function showSongList(c: Context<AppEnv>, section: "music" | "prayers") {
     const query = new URLSearchParams();
     if (search !== "") query.set("search", search);
     if (kind !== "") query.set("has", kind);
+    if (tag !== "") query.set("tag", tag);
     const text = query.toString();
     return text === "" ? address : address + "?" + text;
   }
@@ -82,8 +92,16 @@ async function showSongList(c: Context<AppEnv>, section: "music" | "prayers") {
           )}
         </p>
         <form method="get" action={address} class="search music-search">
-          <input type="search" name="search" value={search} placeholder={isPrayers ? "Search by name" : "Search by title or author"} />
+          <input type="search" name="search" value={search} placeholder={isPrayers ? "Search by name or tag" : "Search by title, author or tag"} />
           {filter !== null && <input type="hidden" name="has" value={filter.kind} />}
+          {allTags.length > 0 && (
+            <select name="tag" aria-label="Tag" onchange="this.form.submit()" class="tag-filter">
+              <option value="">Any tag</option>
+              {allTags.map((each) => (
+                <option value={each} selected={tag === each}>{each}</option>
+              ))}
+            </select>
+          )}
           <button type="submit">Search</button>
         </form>
       </header>
@@ -102,6 +120,7 @@ async function showSongList(c: Context<AppEnv>, section: "music" | "prayers") {
         {songs.length === 1 ? "1 " + (isPrayers ? "item" : "song") : songs.length + (isPrayers ? " items" : " songs")}
         {search !== "" && <> matching "{search}"</>}
         {filter !== null && <> with {filter.label.toLowerCase()}</>}
+        {tag !== "" && <> tagged {tag}</>}
       </p>
 
       {/* A to Z: jump straight to a letter. */}
@@ -173,6 +192,7 @@ function SongCard(props: { song: SongRow; href: string; files: SongFileSummary[]
       <span class="score-card-text">
         <strong>{song.title}</strong>
         {song.author !== "" && <span class="score-card-author">{song.author}</span>}
+        {song.tags !== "" && <span class="song-tags">{splitTags(song.tags).join(" · ")}</span>}
         {available.length > 0 && (
           <span class="score-card-kinds">
             {available.map((item) => (
