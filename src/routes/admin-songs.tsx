@@ -28,7 +28,15 @@ import {
   type SongDetails,
 } from "../database";
 import { makeStorageKey } from "../files";
-import { cleanWebLink, FILE_KIND_LABELS, formatFileSize, getFormText, guessFileKind } from "../helpers";
+import {
+  cleanWebLink,
+  describeFileLabels,
+  FILE_KIND_LABELS,
+  formatFileSize,
+  getFormText,
+  guessFileKind,
+  workOutContentType,
+} from "../helpers";
 import { requireAdmin } from "../middleware";
 import { Notice } from "../pages/layout";
 import { renderPage } from "../pages/render";
@@ -168,6 +176,9 @@ routes.get("/admin/songs/:id", async (c) => {
           {files.map((file) => (
             <li>
               <strong>{FILE_KIND_LABELS[file.kind]}</strong>: <a href={"/files/" + file.id}>{file.filename}</a>{" "}
+              {describeFileLabels(file.music_key, file.version) !== "" && (
+                <span class="file-labels">{describeFileLabels(file.music_key, file.version)}</span>
+              )}{" "}
               <span class="muted">({formatFileSize(file.size)})</span>{" "}
               <form method="post" action={base + "/files/" + file.id + "/delete"} class="inline">
                 <button type="submit" class="link-button">Delete</button>
@@ -179,8 +190,10 @@ routes.get("/admin/songs/:id", async (c) => {
         <h3>Upload files</h3>
         <p class="muted">
           You can pick several files at once. With "Work it out from the file name", PDFs go under sheet
-          music, Word or text files (or any file with "chord" in its name) under chord charts, .mscz files under
-          MuseScore, and MP3s under recordings.
+          music, PowerPoints under lyrics slides, Word files with "lyric" in the name under lyrics, other Word
+          or text files (or any file with "chord" in its name) under chord charts, .mscz files under
+          MuseScore, and MP3s under recordings. The key and version apply to every file in this upload, and
+          can be left blank.
         </p>
         <p class="muted">
           Sheet music, chord charts and MuseScore files are linked from public set lists, so anyone can
@@ -193,10 +206,14 @@ routes.get("/admin/songs/:id", async (c) => {
             <option value="sheet">Sheet music (PDF)</option>
             <option value="chords">Chord chart</option>
             <option value="musescore">MuseScore file</option>
+            <option value="lyrics">Lyrics</option>
+            <option value="slides">Lyrics slides (PowerPoint)</option>
             <option value="recording">Recording</option>
             <option value="other">Other</option>
           </select>
           {/* "multiple" lets you choose more than one file. */}
+          <input type="text" name="musicKey" placeholder="Key, e.g. D" size={8} />
+          <input type="text" name="version" placeholder="Version, e.g. with intro" />
           <input type="file" name="file" required multiple />
           <button type="submit">Upload</button>
         </form>
@@ -241,6 +258,8 @@ routes.post("/admin/songs/:id/files", async (c) => {
   // { all: true } gives us a list when several files were picked.
   const form = await c.req.parseBody({ all: true });
   const chosenKind = getFormText(form, "kind");
+  const musicKey = getFormText(form, "musicKey");
+  const version = getFormText(form, "version");
 
   // Make a plain list of the uploaded files (it may be one file or many).
   const picked = form["file"];
@@ -254,7 +273,7 @@ routes.post("/admin/songs/:id/files", async (c) => {
   }
 
   for (const uploaded of files) {
-    const contentType = workOutContentType(uploaded);
+    const contentType = workOutContentType(uploaded.name, uploaded.type);
 
     // Either the kind the admin picked, or our best guess from the name.
     let kind = chosenKind;
@@ -268,29 +287,21 @@ routes.post("/admin/songs/:id/files", async (c) => {
     await c.env.MUSIC.put(r2Key, uploaded.stream(), {
       httpMetadata: { contentType: contentType },
     });
-    await addSongFile(c.env.DB, songId, kind, r2Key, uploaded.name, contentType, uploaded.size);
+    await addSongFile(c.env.DB, {
+      songId: songId,
+      kind: kind,
+      musicKey: musicKey,
+      version: version,
+      r2Key: r2Key,
+      filename: uploaded.name,
+      contentType: contentType,
+      size: uploaded.size,
+      sourcePath: "",
+    });
   }
 
   return c.redirect("/admin/songs/" + songId + "?saved=1");
 });
-
-/**
- * The file's type, as the browser told us. Browsers don't know some
- * music file types, so we fill those in ourselves.
- */
-function workOutContentType(file: File): string {
-  const name = file.name.toLowerCase();
-  if (name.endsWith(".cho") || name.endsWith(".chordpro")) {
-    return "text/plain; charset=utf-8";
-  }
-  if (name.endsWith(".mscz")) {
-    return "application/x-musescore";
-  }
-  if (name.endsWith(".mscx")) {
-    return "application/x-musescore+xml";
-  }
-  return file.type || "application/octet-stream";
-}
 
 routes.post("/admin/songs/:id/files/:fileId/delete", async (c) => {
   const songId = Number(c.req.param("id"));

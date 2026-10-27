@@ -56,4 +56,5 @@
 	//   BETTER_AUTH_SECRET  random string, 32+ characters
 	//   BETTER_AUTH_URL     e.g. https://ourchoir.nz
 	//   SETUP_TOKEN         one-time code used to create the first admin account
+	//   IMPORT_TOKEN        long random code for tools/import_music.py (optional)
 }

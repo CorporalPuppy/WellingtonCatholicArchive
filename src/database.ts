@@ -290,7 +290,7 @@ export async function deleteSong(db: D1Database, songId: number): Promise<void> 
 
 export async function getSongFiles(db: D1Database, songId: number): Promise<SongFileRow[]> {
   const result = await db
-    .prepare("SELECT * FROM song_files WHERE song_id = ? ORDER BY kind, filename")
+    .prepare("SELECT * FROM song_files WHERE song_id = ? ORDER BY kind, music_key, version, filename")
     .bind(songId)
     .all<SongFileRow>();
   return result.results;
@@ -319,19 +319,54 @@ export async function getSongFile(db: D1Database, fileId: number): Promise<SongF
   return await db.prepare("SELECT * FROM song_files WHERE id = ?").bind(fileId).first<SongFileRow>();
 }
 
-export async function addSongFile(
-  db: D1Database,
-  songId: number,
-  kind: string,
-  r2Key: string,
-  filename: string,
-  contentType: string,
-  size: number,
-): Promise<void> {
+export type NewSongFile = {
+  songId: number;
+  kind: string;
+  musicKey: string;
+  version: string;
+  r2Key: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  sourcePath: string; // "" when uploaded on the website
+};
+
+export async function addSongFile(db: D1Database, file: NewSongFile): Promise<void> {
   await db
-    .prepare("INSERT INTO song_files (song_id, kind, r2_key, filename, content_type, size) VALUES (?, ?, ?, ?, ?, ?)")
-    .bind(songId, kind, r2Key, filename, contentType, size)
+    .prepare(
+      `INSERT INTO song_files (song_id, kind, music_key, version, r2_key, filename, content_type, size, source_path)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      file.songId,
+      file.kind,
+      file.musicKey,
+      file.version,
+      file.r2Key,
+      file.filename,
+      file.contentType,
+      file.size,
+      file.sourcePath,
+    )
     .run();
+}
+
+/** Finds a song by its exact title, ignoring upper and lower case. */
+export async function findSongByTitle(db: D1Database, title: string): Promise<SongRow | null> {
+  return await db.prepare("SELECT * FROM songs WHERE title = ? COLLATE NOCASE").bind(title).first<SongRow>();
+}
+
+/** Every source_path the bulk import has already uploaded. */
+export async function getImportedSourcePaths(db: D1Database): Promise<string[]> {
+  const result = await db
+    .prepare("SELECT source_path FROM song_files WHERE source_path != ''")
+    .all<{ source_path: string }>();
+  return result.results.map((row) => row.source_path);
+}
+
+export async function isSourcePathImported(db: D1Database, sourcePath: string): Promise<boolean> {
+  const row = await db.prepare("SELECT id FROM song_files WHERE source_path = ?").bind(sourcePath).first();
+  return row !== null;
 }
 
 export async function deleteSongFileRecord(db: D1Database, fileId: number): Promise<void> {
