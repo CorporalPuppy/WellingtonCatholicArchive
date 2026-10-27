@@ -158,6 +158,8 @@ def read_file_name(stem):
         (r"\bchanted\b", "Chanted"),
         (r"\bacoustic\b", "Acoustic"),
         (r"\(\s*null[_ ]?(\d+)\s*\)", "Part {0}"),
+        (r"\bpage\s*(\d+)\b", "Page {0}"),
+        (r"\bpart\s*(\d+)\b", "Part {0}"),
     ]
     for pattern, label in labels:
         match = re.search(pattern, text, re.IGNORECASE)

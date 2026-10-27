@@ -374,6 +374,14 @@ libraries.
    `python tools/import_music.py upload --site https://your-site`
    It asks for the import code. Songs that don't exist yet are created.
 
+**Naming new files.** Keep each file in the folder for its type, and name
+it `Song Title - Key of X - Version`, leaving out the parts you don't
+need. For example: `Amazing Grace - Key of G.pdf`,
+`Amazing Grace - Key of A - with intro.mscz`, `Silent Night - Page 2.jpg`,
+`Psalm 23 - The Lord Is My Shepherd - Key of D.docx`. Spell the title
+exactly as in `song_list.csv`, and give each copy its own version
+(`v2`, `Capo 3`, `Page 2`) rather than Windows' "(2)" or "- Copy".
+
 Running either step again is safe: `scan` keeps what you changed in the
 spreadsheet, and `upload` skips files the site already has. If you've
 edited a file on your computer since it was uploaded, `upload` replaces the
