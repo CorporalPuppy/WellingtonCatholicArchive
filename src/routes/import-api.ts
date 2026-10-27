@@ -18,9 +18,9 @@
 
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { addSongFile, createSong, findSongByTitle, getImportedSourcePaths, isSourcePathImported } from "../database";
+import { addSongFile, createSong, findSongByTitle, getImportedSourcePaths, getStorageUsed, isSourcePathImported } from "../database";
 import { makeStorageKey } from "../files";
-import { FILE_KIND_LABELS, workOutContentType } from "../helpers";
+import { FILE_KIND_LABELS, workOutContentType, wouldGoOverFreeStorage } from "../helpers";
 import type { AppEnv } from "../types";
 
 const routes = new Hono<AppEnv>();
@@ -73,9 +73,18 @@ routes.post("/api/import/song-file", async (c) => {
     return c.text("already imported");
   }
 
-  const body = await c.req.arrayBuffer();
-  if (body.byteLength === 0) {
+  // The file's size, from the request. We pass the file straight on to R2
+  // instead of holding it all in memory, because the free plan only gives
+  // each request 128 MB of memory.
+  const size = Number(c.req.header("Content-Length") ?? "0");
+  const body = c.req.raw.body;
+  if (size === 0 || body === null) {
     return c.text("The file is empty.", 400);
+  }
+
+  // Stop before going over Cloudflare's free 10 GB of storage.
+  if (wouldGoOverFreeStorage(await getStorageUsed(c.env.DB), size)) {
+    return c.text("Storage full: this file would go over Cloudflare's free 10 GB.", 507);
   }
 
   // Find the song, or make it.
@@ -106,7 +115,7 @@ routes.post("/api/import/song-file", async (c) => {
     r2Key: r2Key,
     filename: filename,
     contentType: contentType,
-    size: body.byteLength,
+    size: size,
     sourcePath: source,
   });
 

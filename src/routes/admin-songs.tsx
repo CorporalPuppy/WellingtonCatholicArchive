@@ -24,6 +24,7 @@ import {
   getSongFile,
   getSongFiles,
   getSongs,
+  getStorageUsed,
   updateSong,
   type SongDetails,
 } from "../database";
@@ -36,6 +37,7 @@ import {
   getFormText,
   guessFileKind,
   workOutContentType,
+  wouldGoOverFreeStorage,
 } from "../helpers";
 import { requireAdmin } from "../middleware";
 import { Notice } from "../pages/layout";
@@ -154,6 +156,7 @@ routes.get("/admin/songs/:id", async (c) => {
   }
   const files = await getSongFiles(c.env.DB, songId);
   const justSaved = c.req.query("saved") === "1";
+  const storageFull = c.req.query("message") === "storage-full";
   const base = "/admin/songs/" + songId;
 
   return renderPage(
@@ -163,6 +166,7 @@ routes.get("/admin/songs/:id", async (c) => {
       <p><a class="back-link" href="/admin/songs">Back to songs</a> <a class="button button-small button-secondary" href={"/music/" + songId}>View in library</a></p>
       <h1>{song.title}</h1>
       {justSaved && <Notice kind="success" message="Saved." />}
+      {storageFull && <Notice kind="error" message={STORAGE_FULL_MESSAGE} />}
 
       <section class="narrow">
         <h2>Details</h2>
@@ -217,6 +221,8 @@ routes.get("/admin/songs/:id", async (c) => {
           <input type="file" name="file" required multiple />
           <button type="submit">Upload</button>
         </form>
+        {/* Cloudflare's free plan takes at most 100 MB in one go. */}
+        <p class="muted">Up to 100 MB at a time. For more, upload in a few goes.</p>
       </section>
 
       <section>
@@ -272,6 +278,15 @@ routes.post("/admin/songs/:id/files", async (c) => {
     }
   }
 
+  // Stop before going over Cloudflare's free 10 GB of storage.
+  let totalSize = 0;
+  for (const uploaded of files) {
+    totalSize += uploaded.size;
+  }
+  if (wouldGoOverFreeStorage(await getStorageUsed(c.env.DB), totalSize)) {
+    return c.redirect("/admin/songs/" + songId + "?message=storage-full");
+  }
+
   for (const uploaded of files) {
     const contentType = workOutContentType(uploaded.name, uploaded.type);
 
@@ -313,5 +328,9 @@ routes.post("/admin/songs/:id/files/:fileId/delete", async (c) => {
   }
   return c.redirect("/admin/songs/" + songId);
 });
+
+/** Shown when an upload would go over the free 10 GB of storage. */
+const STORAGE_FULL_MESSAGE =
+  "Not uploaded: this would go over the 10 GB of storage Cloudflare gives for free. Delete some old files first.";
 
 export default routes;

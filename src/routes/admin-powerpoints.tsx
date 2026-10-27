@@ -10,9 +10,9 @@
 // ===========================================================================
 
 import { Hono } from "hono";
-import { addPowerpoint, deletePowerpointRecord, getPowerpoint, getPowerpoints } from "../database";
+import { addPowerpoint, deletePowerpointRecord, getPowerpoint, getPowerpoints, getStorageUsed } from "../database";
 import { makeStorageKey } from "../files";
-import { formatDate, formatFileSize, getFormText, getTodaysDate, isValidDate } from "../helpers";
+import { formatDate, formatFileSize, getFormText, getTodaysDate, isValidDate, wouldGoOverFreeStorage } from "../helpers";
 import { requireAdmin } from "../middleware";
 import { Notice } from "../pages/layout";
 import { renderPage } from "../pages/render";
@@ -36,6 +36,9 @@ routes.get("/admin/powerpoints", async (c) => {
       <h1>PowerPoint archive</h1>
       {message === "saved" && <Notice kind="success" message="Uploaded." />}
       {message === "missing" && <Notice kind="error" message="Please pick a file and give it a title and date." />}
+      {message === "storage-full" && (
+        <Notice kind="error" message="Not uploaded: this would go over the 10 GB of storage Cloudflare gives for free. Delete some old files first." />
+      )}
 
       <section class="narrow">
         <h2>Upload a PowerPoint</h2>
@@ -101,6 +104,11 @@ routes.post("/admin/powerpoints", async (c) => {
   // If no file was picked, "uploaded" is a string, not a File.
   if (!(uploaded instanceof File) || uploaded.size === 0 || title === "" || !isValidDate(serviceDate)) {
     return c.redirect("/admin/powerpoints?message=missing");
+  }
+
+  // Stop before going over Cloudflare's free 10 GB of storage.
+  if (wouldGoOverFreeStorage(await getStorageUsed(c.env.DB), uploaded.size)) {
+    return c.redirect("/admin/powerpoints?message=storage-full");
   }
 
   const r2Key = makeStorageKey("powerpoints", uploaded.name);

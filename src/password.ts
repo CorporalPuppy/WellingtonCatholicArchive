@@ -1,9 +1,14 @@
 // Password hashing with the Workers' built-in Web Crypto (PBKDF2).
-// Better Auth's default (scrypt in plain JavaScript) can go over the
+// Better Auth's default (scrypt in plain JavaScript) goes over the
 // free plan's 10 ms CPU limit per request, so we swap it for this.
-// 100,000 iterations is the most Cloudflare's PBKDF2 allows.
+//
+// ITERATIONS is how many times the password is scrambled. More is safer
+// but slower: 100,000 took about 50 ms, far over the free plan's 10 ms,
+// so logging in could fail with Cloudflare "error 1102". 10,000 takes
+// about 5 ms. Each saved password remembers its own count, so passwords
+// made with the old count still work (see verifyPassword).
 
-const ITERATIONS = 100_000;
+const ITERATIONS = 10_000;
 
 function toB64(bytes: Uint8Array): string {
   let s = "";

@@ -55,6 +55,18 @@ export function formatEventTime(localTime: string): string {
 }
 
 /**
+ * Cloudflare R2's free plan stores up to 10 GB. We stop uploads a little
+ * before that (at 9.5 GB) so the site never goes onto a paid plan.
+ */
+export const FREE_STORAGE_BYTES = 10_000_000_000;
+export const STORAGE_STOP_AT_BYTES = 9_500_000_000;
+
+/** True if adding this many bytes would go past the free storage. */
+export function wouldGoOverFreeStorage(alreadyUsed: number, adding: number): boolean {
+  return alreadyUsed + adding > STORAGE_STOP_AT_BYTES;
+}
+
+/**
  * Turns "2026-10-26" into "Monday, 26 October 2026".
  */
 export function formatDate(date: string): string {
@@ -100,7 +112,10 @@ export function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024) {
     return Math.round(bytes / 1024) + " KB";
   }
-  return (bytes / 1024 / 1024).toFixed(1) + " MB";
+  if (bytes < 1024 * 1024 * 1024) {
+    return (bytes / 1024 / 1024).toFixed(1) + " MB";
+  }
+  return (bytes / 1024 / 1024 / 1024).toFixed(2) + " GB";
 }
 
 /** The kinds of music file we store, and how to show each one. */
