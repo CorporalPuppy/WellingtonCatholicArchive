@@ -361,7 +361,7 @@ libraries.
    column points out likely ones, such as "Let My Tounge Be Silenced" and
    "Let My Tongue Be Silenced"), keep one, add the other spelling to it and
    delete the other row. `found_in` shows which kinds of file each song
-   has. The script never changes this file again, so your fixes stick.
+   has (just for your information: a song with only chords is fine). The script never changes this file again, so your fixes stick.
 4. Scan again. Now every file is checked against your song list, and any
    file that doesn't match a song on it is marked `check`. New songs later
    just need a row in the list.

@@ -433,9 +433,9 @@ def write_first_song_list(rows, list_path):
         writer.writeheader()
         for title in sorted(songs, key=str.lower):
             song = songs[title]
+            # A song with only some kinds of file (e.g. just chords) is
+            # normal, so that isn't noted; found_in still shows it.
             notes = sorted(song["notes"])
-            if "," not in song["found_in"]:
-                notes.append("only found in one folder")
             writer.writerow({
                 "title": title,
                 "other_spellings": "; ".join(sorted(song["spellings"])),
