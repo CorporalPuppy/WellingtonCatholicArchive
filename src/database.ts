@@ -545,6 +545,76 @@ export async function addPowerpoint(db: D1Database, powerpoint: NewPowerpoint): 
     .run();
 }
 
+/** PowerPoints added by the bulk import (tools/import_slides.py). */
+export async function getImportedPowerpoints(db: D1Database): Promise<PowerpointRow[]> {
+  const result = await db.prepare(SELECT_POWERPOINTS + " WHERE powerpoints.source_path != ''").all<PowerpointRow>();
+  return result.results;
+}
+
+export async function getPowerpointBySourcePath(db: D1Database, sourcePath: string): Promise<PowerpointRow | null> {
+  return await db.prepare(SELECT_POWERPOINTS + " WHERE powerpoints.source_path = ?").bind(sourcePath).first<PowerpointRow>();
+}
+
+/** Adds a PowerPoint from the bulk import. */
+export async function addImportedPowerpoint(
+  db: D1Database,
+  powerpoint: NewPowerpoint,
+  sourcePath: string,
+  sourceHash: string,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO powerpoints (title, service_date, notes, r2_key, filename, content_type, size, source_path, source_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      powerpoint.title,
+      powerpoint.serviceDate,
+      powerpoint.notes,
+      powerpoint.r2Key,
+      powerpoint.filename,
+      powerpoint.contentType,
+      powerpoint.size,
+      sourcePath,
+      sourceHash,
+    )
+    .run();
+}
+
+/** Points an imported PowerPoint at a new copy of its file (it was edited). */
+export async function replacePowerpointContents(
+  db: D1Database,
+  powerpointId: number,
+  r2Key: string,
+  contentType: string,
+  size: number,
+  sourceHash: string,
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE powerpoints
+       SET r2_key = ?, content_type = ?, size = ?, source_hash = ?, uploaded_at = datetime('now')
+       WHERE id = ?`,
+    )
+    .bind(r2Key, contentType, size, sourceHash, powerpointId)
+    .run();
+}
+
+/** A new title, date, file name or place on your computer for an imported PowerPoint. */
+export async function updateImportedPowerpoint(
+  db: D1Database,
+  powerpointId: number,
+  title: string,
+  serviceDate: string,
+  filename: string,
+  sourcePath: string,
+): Promise<void> {
+  await db
+    .prepare("UPDATE powerpoints SET title = ?, service_date = ?, filename = ?, source_path = ? WHERE id = ?")
+    .bind(title, serviceDate, filename, sourcePath, powerpointId)
+    .run();
+}
+
 export async function deletePowerpointRecord(db: D1Database, powerpointId: number): Promise<void> {
   await db.prepare("DELETE FROM powerpoints WHERE id = ?").bind(powerpointId).run();
 }

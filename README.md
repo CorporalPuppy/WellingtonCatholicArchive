@@ -428,6 +428,37 @@ recordings, since audio is much bigger than sheet music. If you don't
 want the import switched on, delete the secret afterwards with
 `npx wrangler secret delete IMPORT_TOKEN`.
 
+### Importing Sunday and service PowerPoints
+
+`tools/import_slides.py` does the same for the PowerPoints from Masses and
+services. They go in the PowerPoint archive under the date they were used,
+so each one shows on that day's events. It reads the folders in
+`SLIDES_FOLDERS` at the top of the script (`Sunday Mass Presentations`, with
+everything inside it) and any PowerPoints sitting loose in the folder you
+give it. It uses the same import code as the music.
+
+1. Scan: `python tools/import_slides.py scan "C:\Users\Elijah\Documents\Music"`
+   This writes `slides_plan.csv`, one row per file.
+2. Open it in Excel. The script works out the date from the name and the
+   Year folder: `15th Sunday in Ordinary Time - St Teresa's Church` in
+   `Year A - 2026` becomes 12 July 2026. It knows the Sundays of Advent,
+   Lent, Easter and Ordinary Time, the big feasts (kept as in New Zealand,
+   e.g. the Epiphany and the Ascension on a Sunday) and the days of Simbang
+   Gabi. A date in the name works too (`20260531`, `29-03-2026`,
+   `July 24 2026`). Rows marked `check` have no date it could work out,
+   such as an ordination or a retreat: type the date, change `check` to
+   `ok`, or mark it `skip`. You can also change any title or date.
+3. Upload: `python tools/import_slides.py upload --site https://your-site`
+
+As with the music, run `scan` then `upload` again after any change: edited
+files replace the site's copy, moved ones are moved, a new title or date is
+updated, and removed ones are taken off once you type `yes`. A new year's
+folder just needs to be called `Year B - 2027` and so on.
+
+PowerPoints you use again and again, like the Holy Rosary or the Stations
+of the Cross, belong on the Prayers and services page instead: put them in
+the music library's prayers folder and import them with `import_music.py`.
+
 ---
 
 ## Running it on your own computer (optional)

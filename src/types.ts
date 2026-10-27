@@ -103,6 +103,8 @@ export type PowerpointRow = {
   uploaded_at: string;
   event_id: number | null; // the event it was made for (null = matched by date only)
   event_title: string | null; // filled in from the events table
+  source_path: string; // where the bulk import found it ("" if uploaded by hand)
+  source_hash: string; // its fingerprint when imported
 };
 
 export type ReadingsRow = {

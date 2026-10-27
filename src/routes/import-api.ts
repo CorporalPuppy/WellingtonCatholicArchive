@@ -9,6 +9,15 @@
 //                                kind, key or version changed: no upload needed
 //   POST /api/import/delete      a file was removed from your music folders
 //
+// And the same four for Sunday and service PowerPoints (used by
+// tools/import_slides.py). These go in the PowerPoint archive, under the
+// date they were used, so they show on that day's events:
+//
+//   GET  /api/import/slides/done     fingerprint, path, title and date
+//   POST /api/import/slides/file     ?title=&date=&filename=&source=&hash=
+//   POST /api/import/slides/update   ?source=&new_source=&title=&date=&filename=
+//   POST /api/import/slides/delete   ?source=
+//
 // These aren't pages for people. The import script sends the secret
 // IMPORT_TOKEN in an "Authorization: Bearer ..." header instead of logging
 // in. Set it with `npx wrangler secret put IMPORT_TOKEN`. With no
@@ -36,10 +45,16 @@ import {
   createSong,
   deleteSongFileRecord,
   findSongByTitle,
+  addImportedPowerpoint,
   getImportedFiles,
+  getImportedPowerpoints,
+  getPowerpointBySourcePath,
   getSongFileBySourcePath,
   getStorageUsed,
+  deletePowerpointRecord,
+  replacePowerpointContents,
   replaceSongFileContents,
+  updateImportedPowerpoint,
   setSongSection,
   updateImportedSongFile,
 } from "../database";
@@ -229,6 +244,120 @@ routes.post("/api/import/song-file", async (c) => {
   });
 
   return c.text("added to song " + songId);
+});
+
+// ---------------------------------------------------------------------------
+// Sunday and service PowerPoints
+// ---------------------------------------------------------------------------
+
+/** A "YYYY-MM-DD" date from the address, or "" if it isn't one. */
+function readDate(text: string | undefined): string {
+  const date = (text ?? "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : "";
+}
+
+routes.get("/api/import/slides/done", async (c) => {
+  const powerpoints = await getImportedPowerpoints(c.env.DB);
+  const lines = powerpoints.map((powerpoint) =>
+    [powerpoint.source_hash, powerpoint.source_path, powerpoint.title, powerpoint.service_date].join("\t"),
+  );
+  return c.text(lines.join("\n"));
+});
+
+// Renamed or moved on your computer, or a new title or date in the
+// spreadsheet. The file in R2 stays as it is.
+routes.post("/api/import/slides/update", async (c) => {
+  const source = (c.req.query("source") ?? "").trim();
+  const newSource = (c.req.query("new_source") ?? source).trim();
+  const title = (c.req.query("title") ?? "").trim();
+  const date = readDate(c.req.query("date"));
+  const filename = (c.req.query("filename") ?? "").trim();
+  if (source === "" || newSource === "" || title === "" || date === "" || filename === "") {
+    return c.text("source, title, date (YYYY-MM-DD) and filename are all needed.", 400);
+  }
+
+  const powerpoint = await getPowerpointBySourcePath(c.env.DB, source);
+  if (powerpoint === null) {
+    return c.text("Not found: " + source, 404);
+  }
+  if (newSource !== source && (await getPowerpointBySourcePath(c.env.DB, newSource)) !== null) {
+    return c.text("Already on the site: " + newSource, 409);
+  }
+  await updateImportedPowerpoint(c.env.DB, powerpoint.id, title, date, filename, newSource);
+  return c.text("updated");
+});
+
+// Removed from your folders (or marked "skip").
+routes.post("/api/import/slides/delete", async (c) => {
+  const source = (c.req.query("source") ?? "").trim();
+  const powerpoint = source === "" ? null : await getPowerpointBySourcePath(c.env.DB, source);
+  if (powerpoint === null) {
+    return c.text("already gone");
+  }
+  await c.env.MUSIC.delete(powerpoint.r2_key);
+  await deletePowerpointRecord(c.env.DB, powerpoint.id);
+  return c.text("deleted");
+});
+
+routes.post("/api/import/slides/file", async (c) => {
+  const title = (c.req.query("title") ?? "").trim();
+  const date = readDate(c.req.query("date"));
+  const filename = (c.req.query("filename") ?? "").trim();
+  const source = (c.req.query("source") ?? "").trim();
+  // Worked out by the script, as for song files above.
+  let hash = (c.req.query("hash") ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(hash)) {
+    hash = "";
+  }
+  if (title === "" || date === "" || filename === "" || source === "") {
+    return c.text("title, date (YYYY-MM-DD), filename and source are all needed.", 400);
+  }
+
+  const existing = await getPowerpointBySourcePath(c.env.DB, source);
+  if (existing !== null && hash !== "" && existing.source_hash === hash) {
+    return c.text("already imported");
+  }
+
+  // Passed straight on to R2, as for song files above.
+  const size = Number(c.req.header("Content-Length") ?? "0");
+  const body = c.req.raw.body;
+  if (size === 0 || body === null) {
+    return c.text("The file is empty.", 400);
+  }
+  const contentType = workOutContentType(filename, "");
+
+  const freedUp = existing !== null ? existing.size : 0;
+  if (wouldGoOverFreeStorage((await getStorageUsed(c.env.DB)) - freedUp, size)) {
+    return c.text("Storage full: this file would go over Cloudflare's free 10 GB.", 507);
+  }
+
+  const r2Key = makeStorageKey("powerpoints", filename);
+  await c.env.MUSIC.put(r2Key, body, { httpMetadata: { contentType: contentType } });
+
+  // Edited since last time: point it at the new copy, then remove the old one.
+  if (existing !== null) {
+    await replacePowerpointContents(c.env.DB, existing.id, r2Key, contentType, size, hash);
+    await updateImportedPowerpoint(c.env.DB, existing.id, title, date, filename, source);
+    await c.env.MUSIC.delete(existing.r2_key);
+    return c.text("replaced the copy on the site");
+  }
+
+  await addImportedPowerpoint(
+    c.env.DB,
+    {
+      title: title,
+      serviceDate: date,
+      notes: "",
+      eventId: null,
+      r2Key: r2Key,
+      filename: filename,
+      contentType: contentType,
+      size: size,
+    },
+    source,
+    hash,
+  );
+  return c.text("added");
 });
 
 export default routes;
