@@ -29,6 +29,10 @@ export function Layout(props: LayoutProps) {
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <meta name="theme-color" content="#fbfaf7" />
 
+        {/* The "Inter" font from Google Fonts: clean and modern, easy to read. */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
         <link rel="stylesheet" href="/styles.css" />
         {/* Picks light or dark mode before the page shows (see public/theme.js). */}
         <script src="/theme.js"></script>

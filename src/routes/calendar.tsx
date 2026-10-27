@@ -143,13 +143,13 @@ function MonthGrid(props: { month: string; today: string; events: EventRow[]; pa
   return (
     <section class="month-view">
       <div class="month-nav">
-        <a href={"/events?view=month&month=" + addMonths(props.month, -1) + parishPart}>&larr; Previous</a>
+        <a class="button button-small button-secondary" href={"/events?view=month&month=" + addMonths(props.month, -1) + parishPart}>&larr; Previous</a>
         <h2>{monthName(props.month)}</h2>
-        <a href={"/events?view=month&month=" + addMonths(props.month, 1) + parishPart}>Next &rarr;</a>
+        <a class="button button-small button-secondary" href={"/events?view=month&month=" + addMonths(props.month, 1) + parishPart}>Next &rarr;</a>
       </div>
       {props.month !== props.today.slice(0, 7) && (
         <p class="month-today-link">
-          <a href={"/events?view=month&month=" + props.today.slice(0, 7) + parishPart}>Back to this month</a>
+          <a class="button button-small button-secondary" href={"/events?view=month&month=" + props.today.slice(0, 7) + parishPart}>Back to this month</a>
         </p>
       )}
 

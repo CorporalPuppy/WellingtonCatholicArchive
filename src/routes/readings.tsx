@@ -44,6 +44,20 @@ function fullReadingsLink(calendar: string, date: string): string {
   return universalisBase(calendar) + universalisDate(date) + "/mass.htm";
 }
 
+/**
+ * The USCCB page with the readings for a date, e.g.
+ * "2026-10-27" -> "https://bible.usccb.org/bible/readings/102726.cfm".
+ * USCCB has the exact wording read at Mass in the US (the NABRE
+ * translation). That text is copyrighted, so we link to it instead of
+ * copying it. (Universalis can't publish it, so it uses the Jerusalem Bible.)
+ */
+function usccbReadingsLink(date: string): string {
+  const year = date.slice(2, 4);   // "26"
+  const month = date.slice(5, 7);  // "10"
+  const day = date.slice(8, 10);   // "27"
+  return "https://bible.usccb.org/bible/readings/" + month + day + year + ".cfm";
+}
+
 /** The Universalis feed our page loads the readings from. */
 function readingsFeedUrl(calendar: string, date: string): string {
   return universalisBase(calendar) + universalisDate(date) + "/jsonpmass.js";
@@ -66,18 +80,26 @@ routes.get("/readings", async (c) => {
     <div class="readings-page">
       {/* Previous / next day, and a date picker */}
       <nav class="readings-nav">
-        <a href={"/readings?date=" + previousDay}>&larr; Previous day</a>
+        <a class="button button-small button-secondary" href={"/readings?date=" + previousDay}>&larr; Previous day</a>
         <form method="get" action="/readings" class="readings-date-picker">
           <input type="date" name="date" value={date} aria-label="Choose a date" />
           <button type="submit">Go</button>
         </form>
-        <a href={"/readings?date=" + nextDay}>Next day &rarr;</a>
+        <a class="button button-small button-secondary" href={"/readings?date=" + nextDay}>Next day &rarr;</a>
       </nav>
       {date !== today && (
         <p class="readings-today-link">
-          <a href="/readings">Back to today</a>
+          <a class="button button-small button-secondary" href="/readings">Back to today</a>
         </p>
       )}
+
+      {/* The exact US Mass wording is on USCCB's site */}
+      <div class="usccb-box">
+        <span>Want the exact wording read at Mass in the US?</span>
+        <a class="button button-small" href={usccbReadingsLink(date)} target="_blank" rel="noopener">
+          Read on USCCB &rarr;
+        </a>
+      </div>
 
       {/* Readings an admin typed in for this day */}
       {readings !== null && (

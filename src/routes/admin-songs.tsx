@@ -105,7 +105,7 @@ routes.get("/admin/songs", async (c) => {
     c,
     "Songs",
     <>
-      <p><a href="/admin">Back to admin</a></p>
+      <p><a class="back-link" href="/admin">Back to admin</a></p>
       <h1>Songs</h1>
       <p><a class="button" href="/admin/songs/new">Add a song</a></p>
       {songs.length === 0 && <p>No songs yet.</p>}
@@ -129,7 +129,7 @@ routes.get("/admin/songs/new", (c) => {
     c,
     "New song",
     <section class="narrow">
-      <p><a href="/admin/songs">Back to songs</a></p>
+      <p><a class="back-link" href="/admin/songs">Back to songs</a></p>
       <h1>New song</h1>
       <SongForm action="/admin/songs/new" buttonText="Create song" />
     </section>,
@@ -160,7 +160,7 @@ routes.get("/admin/songs/:id", async (c) => {
     c,
     "Edit " + song.title,
     <>
-      <p><a href="/admin/songs">Back to songs</a> | <a href={"/music/" + songId}>View in library</a></p>
+      <p><a class="back-link" href="/admin/songs">Back to songs</a> <a class="button button-small button-secondary" href={"/music/" + songId}>View in library</a></p>
       <h1>{song.title}</h1>
       {justSaved && <Notice kind="success" message="Saved." />}
 

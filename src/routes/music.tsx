@@ -44,8 +44,12 @@ routes.get("/music", async (c) => {
       <ul class="song-list">
         {songs.map((song) => (
           <li>
-            <a href={"/music/" + song.id}>{song.title}</a>
-            {song.author !== "" && <span class="muted"> - {song.author}</span>}
+            {/* The whole card is the link: the title, with the author underneath */}
+            <a href={"/music/" + song.id} class="song-card">
+              <strong>{song.title}</strong>
+              {song.author !== "" && <span class="muted">{song.author}</span>}
+              <span class="song-card-key">{song.song_key !== "" && "Key " + song.song_key}</span>
+            </a>
           </li>
         ))}
       </ul>
@@ -68,7 +72,7 @@ routes.get("/music/:id", async (c) => {
     c,
     song.title,
     <>
-      <p><a href="/music">Back to all songs</a></p>
+      <p><a class="back-link" href="/music">Back to all songs</a></p>
       <h1>{song.title}</h1>
       {song.author !== "" && <p>By {song.author}</p>}
       {song.song_key !== "" && <p>Key: {song.song_key}</p>}
@@ -189,7 +193,7 @@ function SongFileItem(props: { file: SongFileRow; siteAddress: string }) {
         </div>
         <div class="file-actions">
           {preview !== "none" && preview !== "audio" && (
-            <a href={viewUrl} target="_blank">
+            <a href={viewUrl} target="_blank" class="button button-small button-secondary">
               Open
             </a>
           )}

@@ -15,8 +15,10 @@
   --surface: #ffffff;           /* cards and tables */
   --border: #e7e5e0;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.04);
-  --radius: 14px;
+  --shadow-lift: 0 2px 4px rgba(0, 0, 0, 0.05), 0 12px 32px rgba(45, 74, 124, 0.12);  /* cards you hover */
+  --radius: 18px;
   --danger: #c0392b;
+  --glow: rgba(45, 74, 124, 0.10);  /* soft colour wash at the top of each page */
   color-scheme: light;
 }
 
@@ -33,7 +35,10 @@
     --surface: #1b1c20;
     --border: #2c2d33;
     --shadow: none;
+  --shadow-lift: 0 12px 32px rgba(0, 0, 0, 0.4);
+    --shadow-lift: 0 12px 32px rgba(0, 0, 0, 0.4);
     --danger: #ff6b5e;
+    --glow: rgba(157, 184, 232, 0.10);
     color-scheme: dark;
   }
 }
@@ -47,6 +52,7 @@
   --surface: #1b1c20;
   --border: #2c2d33;
   --shadow: none;
+  --shadow-lift: 0 12px 32px rgba(0, 0, 0, 0.4);
   --danger: #ff6b5e;
   color-scheme: dark;
 }
@@ -56,16 +62,39 @@
 body {
   margin: 0;
   /* The device's own modern font: San Francisco, Segoe UI, Roboto... */
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: 17px;
   color: var(--text);
-  background: var(--background);
+  /* A soft glow of colour behind the top of the page, fading into the background */
+  background: radial-gradient(1000px 420px at 50% -120px, var(--glow), transparent) no-repeat, var(--background);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
 
-a { color: var(--accent); text-underline-offset: 3px; }
-a:hover { text-decoration-thickness: 2px; }
+/* Links: accent colour, no underline until you point at them */
+a {
+  color: var(--accent);
+  font-weight: 500;
+  text-decoration: none;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1.5px;
+  transition: color 0.15s, background 0.15s;
+}
+a:hover { text-decoration: underline; }
+/* Links that look like cards, pills or buttons never get an underline */
+.site-name:hover, .month-event:hover, .admin-menu a:hover { text-decoration: none; }
+
+/* "Back to ..." links at the top of a page, with an arrow in front */
+a.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+a.back-link::before { content: "\2190"; transition: transform 0.15s; }  /* ← */
+a.back-link:hover { color: var(--accent); text-decoration: none; }
+a.back-link:hover::before { transform: translateX(-3px); }
 
 main {
   max-width: 880px;
@@ -148,11 +177,12 @@ main {
 }
 .site-footer p { margin: 4px 0; }
 .site-footer a { color: var(--muted); }
+.site-footer a:hover { color: var(--text); }
 
 /* ---- Text ---- */
 
 h1, h2, h3 { line-height: 1.2; letter-spacing: -0.02em; }
-h1 { font-size: clamp(1.9rem, 5vw, 2.6rem); margin: 0 0 16px; }
+h1 { font-size: clamp(2rem, 5vw, 2.8rem); font-weight: 800; letter-spacing: -0.035em; margin: 0 0 16px; }
 h2 { font-size: 1.4rem; margin: 40px 0 12px; }
 h3 { font-size: 1.1rem; }
 
@@ -160,9 +190,71 @@ h3 { font-size: 1.1rem; }
 .event-when { font-weight: 600; }
 
 /* The big welcome at the top of the home page. */
-.hero { padding: 32px 0 16px; }
-.hero h1 { font-size: clamp(2.4rem, 7vw, 3.6rem); letter-spacing: -0.035em; }
-.hero p { font-size: 1.2rem; color: var(--muted); max-width: 36em; }
+.hero { padding: 48px 0 24px; }
+.hero h1 {
+  font-size: clamp(2.6rem, 8vw, 4.2rem);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1.05;
+  margin-bottom: 20px;
+  /* The heading fades from the text colour into the accent colour */
+  background: linear-gradient(120deg, var(--text) 30%, var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.hero-text { font-size: 1.2rem; color: var(--muted); max-width: 34em; margin: 0 0 28px; }
+.hero-buttons .button { padding: 12px 22px; }
+
+/* A small coloured label above a big heading */
+.eyebrow {
+  display: inline-block;
+  margin: 0 0 16px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* A section heading with a link on the right, e.g. "Full calendar →" */
+.section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 48px 0 14px;
+}
+.section-heading h2 { margin: 0; }
+.section-heading a { font-size: 0.95rem; white-space: nowrap; }
+
+/* "For singers": cards in a grid, two or more per row on bigger screens */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.feature-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 20px 22px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.feature-card strong { font-size: 1.05rem; }
+.feature-card .muted { font-size: 0.92rem; font-weight: 400; line-height: 1.5; }
+.feature-arrow { position: absolute; top: 18px; right: 20px; color: var(--accent); transition: transform 0.15s; }
+.feature-card:hover { text-decoration: none; transform: translateY(-2px); border-color: var(--accent); box-shadow: var(--shadow-lift); }
+.feature-card:hover .feature-arrow { transform: translateX(3px); }
 
 /* ---- Cards: event lists, song lists, files, admin menu ---- */
 
@@ -182,9 +274,61 @@ h3 { font-size: 1.1rem; }
   padding: 14px 18px;
 }
 
-.event-list li { transition: transform 0.15s ease, border-color 0.15s ease; }
-.event-list li:hover { transform: translateY(-1px); border-color: var(--accent); }
-.event-list a { text-decoration: none; }
+/* Event cards: the whole card is the link */
+.event-list li { padding: 0; transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s; }
+.event-list li:hover { transform: translateY(-2px); border-color: var(--accent); box-shadow: var(--shadow-lift); }
+.event-card { display: flex; align-items: center; gap: 16px; padding: 14px 18px; color: var(--text); }
+.event-card:hover { text-decoration: none; }
+.event-card-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.event-card-text strong { font-size: 1.05rem; color: var(--text); }
+.event-card-text .muted { font-size: 0.92rem; font-weight: 400; }
+
+/* The little calendar page on each event card */
+.date-badge {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 60px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  line-height: 1;
+}
+.date-badge-month { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.date-badge-day { font-size: 1.5rem; font-weight: 800; margin-top: 4px; letter-spacing: -0.02em; }
+
+/* A small grey label, e.g. "Members only" */
+.tag {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+/* Song cards: title and author on the left, key on the right */
+.song-list li { padding: 0; }
+.song-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 12px;
+  padding: 14px 18px;
+  color: var(--text);
+}
+.song-card:hover { text-decoration: none; }
+.song-card strong { font-size: 1.05rem; }
+.song-card .muted { grid-column: 1; font-size: 0.92rem; font-weight: 400; }
+.song-card-key { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 0.85rem; font-weight: 600; color: var(--accent); }
+
+/* Song and admin cards lift a little when you point at them */
+.song-list li, .admin-menu li { transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s; }
+.song-list li:hover, .admin-menu li:hover { transform: translateY(-2px); border-color: var(--accent); box-shadow: var(--shadow-lift); }
 
 .admin-menu { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
 .admin-menu a { font-weight: 600; font-size: 1.05rem; }
@@ -283,7 +427,19 @@ button, .button {
   text-decoration: none;
   white-space: nowrap;
 }
-button:hover, .button:hover { filter: brightness(1.1); }
+button:hover, .button:hover { filter: brightness(1.1); text-decoration: none; }
+
+/* A quieter, outlined button, for "Open", "Next day", "View on site"... */
+.button-secondary {
+  background: var(--surface);
+  color: var(--accent);
+  border: 1px solid var(--border);
+}
+.button-secondary:hover { filter: none; border-color: var(--accent); background: var(--accent-soft); }
+
+/* A row of buttons with space between them */
+p:has(> .button) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.readings-today-link, .month-today-link { justify-content: center; }
 
 button.danger { background: var(--danger); }
 
@@ -292,10 +448,9 @@ button.link-button {
   background: none;
   color: var(--accent);
   padding: 0;
-  font-weight: normal;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  font-weight: 500;
 }
+button.link-button:hover { text-decoration: underline; filter: none; }
 button.danger-text { color: var(--danger); }
 
 .narrow { max-width: 520px; }
@@ -390,9 +545,23 @@ fieldset.reading-fields legend { font-weight: 700; color: var(--accent); padding
 }
 .readings-nav > a { text-decoration: none; font-weight: 600; }
 
-.readings-date-picker { display: flex; gap: 8px; }
+.readings-date-picker { display: flex; align-items: center; gap: 8px; }
 .readings-date-picker input { margin: 0; width: auto; }
 .readings-today-link { text-align: center; margin: 8px 0 0; }
+
+/* The "Read on USCCB" strip above the readings */
+.usccb-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin: 20px 0 0;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  font-size: 0.95rem;
+}
 
 .readings-header { text-align: center; margin: 32px 0 8px; }
 .readings-header h1 { margin: 6px 0; font-size: clamp(1.6rem, 4.5vw, 2.2rem); }
