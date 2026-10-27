@@ -11,6 +11,9 @@
 //   POST /admin/events/:id/roster/:entryId/delete
 //   POST /admin/events/:id/setlist         add a song to the set list
 //   POST /admin/events/:id/setlist/:itemId/delete
+//
+// The event page also has a Slides section: its upload and delete forms
+// are handled in admin-powerpoints.tsx.
 // ===========================================================================
 
 import { Hono } from "hono";
@@ -23,6 +26,7 @@ import {
   getAllEvents,
   getParishes,
   getEvent,
+  getPowerpointsForEvent,
   getRoster,
   getSetlist,
   getSongs,
@@ -30,7 +34,7 @@ import {
   updateEvent,
   type EventDetails,
 } from "../database";
-import { formatEventTime, getFormText } from "../helpers";
+import { formatEventTime, formatFileSize, getFormText } from "../helpers";
 import { requireAdmin } from "../middleware";
 import { Notice } from "../pages/layout";
 import { renderPage } from "../pages/render";
@@ -170,7 +174,11 @@ routes.get("/admin/events/:id", async (c) => {
   const setlist = await getSetlist(c.env.DB, eventId);
   const allSongs = await getSongs(c.env.DB, "");
   const parishes = await getParishes(c.env.DB);
+  const slides = await getPowerpointsForEvent(c.env.DB, eventId, event.starts_at.slice(0, 10));
+  const songs = allSongs.filter((song) => song.section === "music");
+  const prayers = allSongs.filter((song) => song.section === "prayers");
   const justSaved = c.req.query("saved") === "1";
+  const message = c.req.query("message");
   const base = "/admin/events/" + eventId;
 
   return renderPage(
@@ -180,6 +188,11 @@ routes.get("/admin/events/:id", async (c) => {
       <p><a class="back-link" href="/admin/events">Back to events</a> <a class="button button-small button-secondary" href={"/events/" + eventId}>View on site</a></p>
       <h1>{event.title}</h1>
       {justSaved && <Notice kind="success" message="Saved." />}
+      {message === "saved" && <Notice kind="success" message="Slides uploaded." />}
+      {message === "missing" && <Notice kind="error" message="Please pick a file and give it a title." />}
+      {message === "storage-full" && (
+        <Notice kind="error" message="Not uploaded: this would go over the 10 GB of storage Cloudflare gives for free. Delete some old files first." />
+      )}
 
       <section class="narrow">
         <h2>Details</h2>
@@ -204,14 +217,57 @@ routes.get("/admin/events/:id", async (c) => {
         {allSongs.length > 0 && (
           <form method="post" action={base + "/setlist"} class="row">
             <select name="songId" required>
-              {allSongs.map((song) => (
-                <option value={String(song.id)}>{song.title}</option>
-              ))}
+              <optgroup label="Songs">
+                {songs.map((song) => (
+                  <option value={String(song.id)}>{song.title}</option>
+                ))}
+              </optgroup>
+              {prayers.length > 0 && (
+                <optgroup label="Prayers and services">
+                  {prayers.map((song) => (
+                    <option value={String(song.id)}>{song.title}</option>
+                  ))}
+                </optgroup>
+              )}
             </select>
-            <input type="text" name="notes" placeholder="Part of the Mass (e.g. Entrance, Communion)" />
-            <button type="submit">Add song</button>
+            <input type="text" name="notes" placeholder="Part of the Mass (e.g. Entrance, Creed, Communion)" />
+            <button type="submit">Add</button>
           </form>
         )}
+      </section>
+
+      <section>
+        <h2>Slides</h2>
+        <p class="muted">
+          The PowerPoint for this Mass or service, to put on the screen. PowerPoints uploaded in the{" "}
+          <a href="/admin/powerpoints">archive</a> for the same date show here too.
+        </p>
+        {slides.length === 0 && <p>No slides yet.</p>}
+        <ul class="file-list">
+          {slides.map((powerpoint) => (
+            <li>
+              <a href={"/powerpoints/" + powerpoint.id + "/file?download=1"}>{powerpoint.title}</a>{" "}
+              <span class="muted">({powerpoint.filename}, {formatFileSize(powerpoint.size)})</span>{" "}
+              <form
+                method="post"
+                action={"/admin/powerpoints/" + powerpoint.id + "/delete"}
+                class="inline"
+                onsubmit="return confirm('Delete these slides?')"
+              >
+                <input type="hidden" name="returnTo" value={base} />
+                <button type="submit" class="link-button danger-text">Delete</button>
+              </form>
+            </li>
+          ))}
+        </ul>
+        {/* enctype="multipart/form-data" is needed for forms that send files. */}
+        <form method="post" action="/admin/powerpoints" enctype="multipart/form-data" class="row">
+          <input type="hidden" name="eventId" value={String(eventId)} />
+          <input type="hidden" name="returnTo" value={base} />
+          <input type="text" name="title" required value={event.title + " slides"} aria-label="Title" />
+          <input type="file" name="file" required accept=".ppt,.pptx,.pdf,.key,.odp" />
+          <button type="submit">Upload slides</button>
+        </form>
       </section>
 
       <section>

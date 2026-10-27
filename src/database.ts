@@ -197,7 +197,7 @@ export async function deleteRosterEntry(db: D1Database, entryId: number): Promis
 export async function getSetlist(db: D1Database, eventId: number): Promise<SetlistRow[]> {
   const result = await db
     .prepare(
-      `SELECT setlist_items.*, songs.title, songs.author, songs.song_key, songs.youtube_url, songs.sheet_music_url
+      `SELECT setlist_items.*, songs.title, songs.author, songs.song_key, songs.youtube_url, songs.sheet_music_url, songs.section
        FROM setlist_items
        JOIN songs ON songs.id = setlist_items.song_id
        WHERE setlist_items.event_id = ?
@@ -230,17 +230,25 @@ export async function removeSongFromSetlist(db: D1Database, itemId: number): Pro
 // Songs
 // ===========================================================================
 
-/** All songs A to Z, or only the ones matching a search. */
-export async function getSongs(db: D1Database, search: string): Promise<SongRow[]> {
-  if (search === "") {
-    const result = await db.prepare("SELECT * FROM songs ORDER BY title COLLATE NOCASE").all<SongRow>();
-    return result.results;
+/**
+ * Songs A to Z, or only the ones matching a search.
+ * section: "music" for the music library, "prayers" for Prayers and
+ * services, or "" for every song (e.g. when picking a set list).
+ */
+export async function getSongs(db: D1Database, search: string, section: "" | "music" | "prayers" = ""): Promise<SongRow[]> {
+  let sql = "SELECT * FROM songs WHERE 1 = 1";
+  const values: string[] = [];
+  if (section !== "") {
+    sql = sql + " AND section = ?";
+    values.push(section);
   }
-  const pattern = "%" + search + "%";
-  const result = await db
-    .prepare("SELECT * FROM songs WHERE title LIKE ? OR author LIKE ? ORDER BY title COLLATE NOCASE")
-    .bind(pattern, pattern)
-    .all<SongRow>();
+  if (search !== "") {
+    const pattern = "%" + search + "%";
+    sql = sql + " AND (title LIKE ? OR author LIKE ?)";
+    values.push(pattern, pattern);
+  }
+  sql = sql + " ORDER BY title COLLATE NOCASE";
+  const result = await db.prepare(sql).bind(...values).all<SongRow>();
   return result.results;
 }
 
@@ -256,15 +264,16 @@ export type SongDetails = {
   notes: string;
   youtubeUrl: string;
   sheetMusicUrl: string;
+  section: "music" | "prayers";
 };
 
 export async function createSong(db: D1Database, song: SongDetails): Promise<number> {
   const row = await db
     .prepare(
-      `INSERT INTO songs (title, author, song_key, ccli_number, notes, youtube_url, sheet_music_url)
-       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+      `INSERT INTO songs (title, author, song_key, ccli_number, notes, youtube_url, sheet_music_url, section)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
     )
-    .bind(song.title, song.author, song.songKey, song.ccliNumber, song.notes, song.youtubeUrl, song.sheetMusicUrl)
+    .bind(song.title, song.author, song.songKey, song.ccliNumber, song.notes, song.youtubeUrl, song.sheetMusicUrl, song.section)
     .first<{ id: number }>();
   return row!.id;
 }
@@ -273,11 +282,16 @@ export async function updateSong(db: D1Database, songId: number, song: SongDetai
   await db
     .prepare(
       `UPDATE songs
-       SET title = ?, author = ?, song_key = ?, ccli_number = ?, notes = ?, youtube_url = ?, sheet_music_url = ?
+       SET title = ?, author = ?, song_key = ?, ccli_number = ?, notes = ?, youtube_url = ?, sheet_music_url = ?, section = ?
        WHERE id = ?`,
     )
-    .bind(song.title, song.author, song.songKey, song.ccliNumber, song.notes, song.youtubeUrl, song.sheetMusicUrl, songId)
+    .bind(song.title, song.author, song.songKey, song.ccliNumber, song.notes, song.youtubeUrl, song.sheetMusicUrl, song.section, songId)
     .run();
+}
+
+/** Moves a song to the music library or to Prayers and services. */
+export async function setSongSection(db: D1Database, songId: number, section: "music" | "prayers"): Promise<void> {
+  await db.prepare("UPDATE songs SET section = ? WHERE id = ?").bind(section, songId).run();
 }
 
 export async function deleteSong(db: D1Database, songId: number): Promise<void> {
@@ -297,9 +311,8 @@ export async function getSongFiles(db: D1Database, songId: number): Promise<Song
 }
 
 /**
- * The sheet music, chord charts and MuseScore files for every song in an
- * event's set list,
- * so the event page can link straight to them.
+ * The sheet music, chord charts, MuseScore files and slides for every song
+ * in an event's set list, so the event page can link straight to them.
  */
 export async function getSheetFilesForEvent(db: D1Database, eventId: number): Promise<SongFileRow[]> {
   const result = await db
@@ -307,7 +320,7 @@ export async function getSheetFilesForEvent(db: D1Database, eventId: number): Pr
       `SELECT song_files.*
        FROM song_files
        JOIN setlist_items ON setlist_items.song_id = song_files.song_id
-       WHERE setlist_items.event_id = ? AND song_files.kind IN ('sheet', 'chords', 'musescore')
+       WHERE setlist_items.event_id = ? AND song_files.kind IN ('sheet', 'chords', 'musescore', 'slides')
        ORDER BY song_files.kind, song_files.filename`,
     )
     .bind(eventId)
@@ -402,39 +415,78 @@ export async function deleteSongFileRecord(db: D1Database, fileId: number): Prom
 // PowerPoint archive (the files are in R2; this is the list of them)
 // ===========================================================================
 
+// Every PowerPoint query starts like this, so each one comes with the
+// title of the event it was made for (if any).
+const SELECT_POWERPOINTS = `
+  SELECT powerpoints.*, events.title AS event_title
+  FROM powerpoints
+  LEFT JOIN events ON events.id = powerpoints.event_id`;
+
 /** All PowerPoints, newest service first, or only those matching a search. */
 export async function getPowerpoints(db: D1Database, search: string): Promise<PowerpointRow[]> {
   if (search === "") {
-    const result = await db.prepare("SELECT * FROM powerpoints ORDER BY service_date DESC, title").all<PowerpointRow>();
+    const result = await db.prepare(SELECT_POWERPOINTS + " ORDER BY powerpoints.service_date DESC, powerpoints.title").all<PowerpointRow>();
     return result.results;
   }
   const pattern = "%" + search + "%";
   const result = await db
-    .prepare("SELECT * FROM powerpoints WHERE title LIKE ? OR notes LIKE ? OR service_date LIKE ? ORDER BY service_date DESC, title")
-    .bind(pattern, pattern, pattern)
+    .prepare(
+      SELECT_POWERPOINTS +
+        ` WHERE powerpoints.title LIKE ? OR powerpoints.notes LIKE ? OR powerpoints.service_date LIKE ? OR events.title LIKE ?
+          ORDER BY powerpoints.service_date DESC, powerpoints.title`,
+    )
+    .bind(pattern, pattern, pattern, pattern)
+    .all<PowerpointRow>();
+  return result.results;
+}
+
+/**
+ * The PowerPoints for one event: those uploaded for it, plus those in the
+ * archive for the same date that aren't tied to another event.
+ */
+export async function getPowerpointsForEvent(db: D1Database, eventId: number, date: string): Promise<PowerpointRow[]> {
+  const result = await db
+    .prepare(
+      SELECT_POWERPOINTS +
+        ` WHERE powerpoints.event_id = ? OR (powerpoints.event_id IS NULL AND powerpoints.service_date = ?)
+          ORDER BY powerpoints.title`,
+    )
+    .bind(eventId, date)
     .all<PowerpointRow>();
   return result.results;
 }
 
 export async function getPowerpoint(db: D1Database, powerpointId: number): Promise<PowerpointRow | null> {
-  return await db.prepare("SELECT * FROM powerpoints WHERE id = ?").bind(powerpointId).first<PowerpointRow>();
+  return await db.prepare(SELECT_POWERPOINTS + " WHERE powerpoints.id = ?").bind(powerpointId).first<PowerpointRow>();
 }
 
-export async function addPowerpoint(
-  db: D1Database,
-  title: string,
-  serviceDate: string,
-  notes: string,
-  r2Key: string,
-  filename: string,
-  contentType: string,
-  size: number,
-): Promise<void> {
+export type NewPowerpoint = {
+  title: string;
+  serviceDate: string;
+  notes: string;
+  eventId: number | null;
+  r2Key: string;
+  filename: string;
+  contentType: string;
+  size: number;
+};
+
+export async function addPowerpoint(db: D1Database, powerpoint: NewPowerpoint): Promise<void> {
   await db
     .prepare(
-      "INSERT INTO powerpoints (title, service_date, notes, r2_key, filename, content_type, size) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      `INSERT INTO powerpoints (title, service_date, notes, event_id, r2_key, filename, content_type, size)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .bind(title, serviceDate, notes, r2Key, filename, contentType, size)
+    .bind(
+      powerpoint.title,
+      powerpoint.serviceDate,
+      powerpoint.notes,
+      powerpoint.eventId,
+      powerpoint.r2Key,
+      powerpoint.filename,
+      powerpoint.contentType,
+      powerpoint.size,
+    )
     .run();
 }
 

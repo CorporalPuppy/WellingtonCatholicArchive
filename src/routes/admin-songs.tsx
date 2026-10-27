@@ -38,6 +38,8 @@ import {
   formatFileSize,
   getFormText,
   guessFileKind,
+  readSongSection,
+  songPageLink,
   workOutContentType,
   wouldGoOverFreeStorage,
 } from "../helpers";
@@ -60,16 +62,25 @@ function readSongForm(form: Record<string, unknown>): SongDetails {
     notes: getFormText(form, "notes"),
     youtubeUrl: cleanWebLink(getFormText(form, "youtubeUrl")),
     sheetMusicUrl: cleanWebLink(getFormText(form, "sheetMusicUrl")),
+    section: readSongSection(getFormText(form, "section")),
   };
 }
 
-function SongForm(props: { action: string; song?: SongRow; buttonText: string }) {
+function SongForm(props: { action: string; song?: SongRow; section?: string; buttonText: string }) {
   const song = props.song;
+  const section = song?.section ?? props.section ?? "music";
   return (
     <form method="post" action={props.action}>
       <label>
         Title
         <input type="text" name="title" required value={song?.title ?? ""} />
+      </label>
+      <label>
+        Show it under
+        <select name="section">
+          <option value="music" selected={section === "music"}>Music library</option>
+          <option value="prayers" selected={section === "prayers"}>Prayers and services (prayers, rosaries, special services)</option>
+        </select>
       </label>
       <label>
         Author / composer
@@ -105,22 +116,40 @@ function SongForm(props: { action: string; song?: SongRow; buttonText: string })
 // ---------------------------------------------------------------------------
 routes.get("/admin/songs", async (c) => {
   const songs = await getSongs(c.env.DB, "");
+  const sections = [
+    { section: "music", heading: "Music library" },
+    { section: "prayers", heading: "Prayers and services" },
+  ];
   return renderPage(
     c,
     "Songs",
     <>
       <p><a class="back-link" href="/admin">Back to admin</a></p>
-      <h1>Songs</h1>
-      <p><a class="button" href="/admin/songs/new">Add a song</a></p>
+      <h1>Songs, prayers and services</h1>
+      <p>
+        <a class="button" href="/admin/songs/new">Add a song</a>{" "}
+        <a class="button button-secondary" href="/admin/songs/new?section=prayers">Add a prayer or service</a>
+      </p>
       {songs.length === 0 && <p>No songs yet.</p>}
-      <ul class="song-list">
-        {songs.map((song) => (
-          <li>
-            <a href={"/admin/songs/" + song.id}>{song.title}</a>
-            {song.author !== "" && <span class="muted"> - {song.author}</span>}
-          </li>
-        ))}
-      </ul>
+      {sections.map((group) => {
+        const songsInSection = songs.filter((song) => song.section === group.section);
+        if (songsInSection.length === 0) {
+          return null;
+        }
+        return (
+          <>
+            <h2>{group.heading}</h2>
+            <ul class="song-list">
+              {songsInSection.map((song) => (
+                <li>
+                  <a href={"/admin/songs/" + song.id}>{song.title}</a>
+                  {song.author !== "" && <span class="muted"> - {song.author}</span>}
+                </li>
+              ))}
+            </ul>
+          </>
+        );
+      })}
     </>,
   );
 });
@@ -129,13 +158,15 @@ routes.get("/admin/songs", async (c) => {
 // New song
 // ---------------------------------------------------------------------------
 routes.get("/admin/songs/new", (c) => {
+  const section = readSongSection(c.req.query("section") ?? "");
+  const heading = section === "prayers" ? "New prayer or service" : "New song";
   return renderPage(
     c,
-    "New song",
+    heading,
     <section class="narrow">
       <p><a class="back-link" href="/admin/songs">Back to songs</a></p>
-      <h1>New song</h1>
-      <SongForm action="/admin/songs/new" buttonText="Create song" />
+      <h1>{heading}</h1>
+      <SongForm action="/admin/songs/new" section={section} buttonText="Create" />
     </section>,
   );
 });
@@ -165,7 +196,7 @@ routes.get("/admin/songs/:id", async (c) => {
     c,
     "Edit " + song.title,
     <>
-      <p><a class="back-link" href="/admin/songs">Back to songs</a> <a class="button button-small button-secondary" href={"/music/" + songId}>View in library</a></p>
+      <p><a class="back-link" href="/admin/songs">Back to songs</a> <a class="button button-small button-secondary" href={songPageLink(song)}>View on site</a></p>
       <h1>{song.title}</h1>
       {justSaved && <Notice kind="success" message="Saved." />}
       {storageFull && <Notice kind="error" message={STORAGE_FULL_MESSAGE} />}
@@ -204,7 +235,7 @@ routes.get("/admin/songs/:id", async (c) => {
         <h3>Upload files</h3>
         <p class="muted">
           You can pick several files at once. With "Work it out from the file name", PDFs go under sheet
-          music, PowerPoints under lyrics slides, Word files with "lyric" in the name under lyrics, other Word
+          music, PowerPoints under slides, Word files with "lyric" in the name under lyrics, other Word
           or text files (or any file with "chord" in its name) under chord charts, .mscz files under
           MuseScore, and MP3s under recordings. The key and version apply to every file in this upload, and
           can be left blank.
@@ -221,7 +252,7 @@ routes.get("/admin/songs/:id", async (c) => {
             <option value="chords">Chord chart</option>
             <option value="musescore">MuseScore file</option>
             <option value="lyrics">Lyrics</option>
-            <option value="slides">Lyrics slides (PowerPoint)</option>
+            <option value="slides">Slides (PowerPoint)</option>
             <option value="recording">Recording</option>
             <option value="other">Other</option>
           </select>

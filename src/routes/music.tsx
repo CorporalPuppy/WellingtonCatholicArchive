@@ -3,6 +3,10 @@
 // chord charts, MuseScore files and recordings. The files themselves are
 // stored in R2 (Cloudflare's file storage).
 //
+// Prayers and services (the Creeds, the Prayer of St Francis, rosaries,
+// special services...) are kept the same way, but listed on their own
+// page: /prayers. They are songs with section = "prayers".
+//
 // Who can see this is set by EVERYTHING_PUBLIC in wrangler.jsonc
 // ("yes" = everyone, "no" = logged-in members only).
 // ===========================================================================
@@ -21,31 +25,51 @@ const routes = new Hono<AppEnv>();
 // Check the visitor is allowed in before any page in this file.
 routes.use("/music", requireMemberAccess);
 routes.use("/music/*", requireMemberAccess);
+routes.use("/prayers", requireMemberAccess);
+routes.use("/prayers/*", requireMemberAccess);
 // (Files check access themselves: see /files/:id below.)
 
 // ---------------------------------------------------------------------------
 // List of songs, with a search box: GET /music?search=amazing
+// List of prayers and services:      GET /prayers?search=creed
 // ---------------------------------------------------------------------------
 routes.get("/music", async (c) => {
+  return await showSongList(c, "music");
+});
+
+routes.get("/prayers", async (c) => {
+  return await showSongList(c, "prayers");
+});
+
+async function showSongList(c: Context<AppEnv>, section: "music" | "prayers") {
   const search = (c.req.query("search") ?? "").trim();
-  const songs = await getSongs(c.env.DB, search);
+  const songs = await getSongs(c.env.DB, search, section);
+  const isPrayers = section === "prayers";
+  const address = isPrayers ? "/prayers" : "/music";
 
   return renderPage(
     c,
-    "Music",
+    isPrayers ? "Prayers and services" : "Music",
     <>
-      <h1>Music library</h1>
-      <form method="get" action="/music" class="search">
-        <input type="search" name="search" value={search} placeholder="Search by title or author" />
+      <h1>{isPrayers ? "Prayers and services" : "Music library"}</h1>
+      <p class="muted">
+        {isPrayers ? (
+          <>Slides and words for prayers, rosaries and special services. Looking for a hymn? See the <a href="/music">music library</a>.</>
+        ) : (
+          <>Looking for the Creed, a rosary or another prayer? See <a href="/prayers">Prayers and services</a>.</>
+        )}
+      </p>
+      <form method="get" action={address} class="search">
+        <input type="search" name="search" value={search} placeholder={isPrayers ? "Search by name" : "Search by title or author"} />
         <button type="submit">Search</button>
       </form>
 
-      {songs.length === 0 && <p>No songs found.</p>}
+      {songs.length === 0 && <p>{isPrayers ? "Nothing found." : "No songs found."}</p>}
       <ul class="song-list">
         {songs.map((song) => (
           <li>
             {/* The whole card is the link: the title, with the author underneath */}
-            <a href={"/music/" + song.id} class="song-card">
+            <a href={address + "/" + song.id} class="song-card">
               <strong>{song.title}</strong>
               {song.author !== "" && <span class="muted">{song.author}</span>}
               <span class="song-card-key">{song.song_key !== "" && "Key " + song.song_key}</span>
@@ -55,24 +79,38 @@ routes.get("/music", async (c) => {
       </ul>
     </>,
   );
-});
+}
 
 // ---------------------------------------------------------------------------
-// One song and its files: GET /music/123
+// One song and its files: GET /music/123 (or /prayers/123)
 // ---------------------------------------------------------------------------
 routes.get("/music/:id", async (c) => {
-  const songId = Number(c.req.param("id"));
+  return await showSong(c, Number(c.req.param("id")));
+});
+
+routes.get("/prayers/:id", async (c) => {
+  return await showSong(c, Number(c.req.param("id")));
+});
+
+async function showSong(c: Context<AppEnv>, songId: number) {
   const song = await getSong(c.env.DB, songId);
   if (song === null) {
     return renderPage(c, "Not found", <p>Sorry, we couldn't find that song.</p>, 404);
   }
   const files = await getSongFiles(c.env.DB, songId);
+  const isPrayer = song.section === "prayers";
 
   return renderPage(
     c,
     song.title,
     <>
-      <p><a class="back-link" href="/music">Back to all songs</a></p>
+      <p>
+        {isPrayer ? (
+          <a class="back-link" href="/prayers">Back to prayers and services</a>
+        ) : (
+          <a class="back-link" href="/music">Back to all songs</a>
+        )}
+      </p>
       <h1>{song.title}</h1>
       {song.author !== "" && <p>By {song.author}</p>}
       {song.song_key !== "" && <p>Key: {song.song_key}</p>}
@@ -112,7 +150,7 @@ routes.get("/music/:id", async (c) => {
       ))}
     </>,
   );
-});
+}
 
 /** The sections on a song page, in the order they appear. */
 const FILE_SECTIONS = [
@@ -124,7 +162,7 @@ const FILE_SECTIONS = [
     help: "Open these in the free MuseScore app (musescore.org) to play, transpose or print.",
   },
   { kind: "lyrics", heading: "Lyrics", help: "" },
-  { kind: "slides", heading: "Lyrics slides", help: "PowerPoints of the words, for the screen at Mass." },
+  { kind: "slides", heading: "Slides", help: "PowerPoints of the words, for the screen at Mass." },
   { kind: "recording", heading: "Recordings", help: "" },
   { kind: "other", heading: "Other files", help: "" },
 ];

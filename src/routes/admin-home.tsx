@@ -42,12 +42,12 @@ routes.get("/admin", async (c) => {
           <p class="muted">The parishes the choir sings at, with their addresses.</p>
         </li>
         <li>
-          <a href="/admin/songs">Songs and music files</a>
-          <p class="muted">Add songs, YouTube links, sheet music, chord charts and recordings.</p>
+          <a href="/admin/songs">Songs, prayers and services</a>
+          <p class="muted">Add songs, YouTube links, sheet music, chord charts and recordings, and the slides for prayers, rosaries and special services.</p>
         </li>
         <li>
           <a href="/admin/powerpoints">PowerPoint archive</a>
-          <p class="muted">Upload the slides from each service so people can find them later.</p>
+          <p class="muted">Every PowerPoint for a Sunday or service. You can also upload slides straight from an event's page.</p>
         </li>
         <li>
           <a href="/admin/readings">Daily readings</a>

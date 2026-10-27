@@ -5,14 +5,26 @@
 //   POST /admin/powerpoints               upload a PowerPoint
 //   POST /admin/powerpoints/:id/delete    delete one
 //
+// The slides section of each event's admin page uses the same two forms,
+// with an eventId (the upload is tied to that event and takes its date)
+// and a returnTo (the page to go back to afterwards).
+//
 // Files are stored in R2 (in the same bucket as the music, in a
 // "powerpoints" folder). A row in the powerpoints table remembers each one.
 // ===========================================================================
 
 import { Hono } from "hono";
-import { addPowerpoint, deletePowerpointRecord, getPowerpoint, getPowerpoints, getStorageUsed } from "../database";
+import { addPowerpoint, deletePowerpointRecord, getEvent, getPowerpoint, getPowerpoints, getStorageUsed } from "../database";
 import { makeStorageKey } from "../files";
-import { formatDate, formatFileSize, getFormText, getTodaysDate, isValidDate, wouldGoOverFreeStorage } from "../helpers";
+import {
+  formatDate,
+  formatFileSize,
+  getFormText,
+  getTodaysDate,
+  isValidDate,
+  safeRedirectPath,
+  wouldGoOverFreeStorage,
+} from "../helpers";
 import { requireAdmin } from "../middleware";
 import { Notice } from "../pages/layout";
 import { renderPage } from "../pages/render";
@@ -34,6 +46,10 @@ routes.get("/admin/powerpoints", async (c) => {
     <>
       <p><a class="back-link" href="/admin">Back to admin</a></p>
       <h1>PowerPoint archive</h1>
+      <p class="muted">
+        Slides for a particular Mass or service can also be uploaded from that event's page under{" "}
+        <a href="/admin/events">Events</a>. Anything uploaded here shows on every event on the same date.
+      </p>
       {message === "saved" && <Notice kind="success" message="Uploaded." />}
       {message === "missing" && <Notice kind="error" message="Please pick a file and give it a title and date." />}
       {message === "storage-full" && (
@@ -74,7 +90,10 @@ routes.get("/admin/powerpoints", async (c) => {
               <td>
                 <a href={"/powerpoints/" + powerpoint.id + "/file?download=1"}>{powerpoint.title}</a>
                 <br />
-                <span class="muted">{powerpoint.filename} ({formatFileSize(powerpoint.size)})</span>
+                <span class="muted">
+                  {powerpoint.event_title !== null && powerpoint.event_title + " - "}
+                  {powerpoint.filename} ({formatFileSize(powerpoint.size)})
+                </span>
               </td>
               <td>
                 <form
@@ -97,18 +116,30 @@ routes.get("/admin/powerpoints", async (c) => {
 routes.post("/admin/powerpoints", async (c) => {
   const form = await c.req.parseBody();
   const title = getFormText(form, "title");
-  const serviceDate = getFormText(form, "serviceDate");
+  let serviceDate = getFormText(form, "serviceDate");
   const notes = getFormText(form, "notes");
   const uploaded = form["file"];
+  const returnTo = safeRedirectPath(getFormText(form, "returnTo") || "/admin/powerpoints");
+  const goBack = (message: string) => c.redirect(returnTo + (returnTo.includes("?") ? "&" : "?") + "message=" + message);
+
+  // Uploaded from an event's page: tie it to that event, on its date.
+  let eventId: number | null = null;
+  if (getFormText(form, "eventId") !== "") {
+    const event = await getEvent(c.env.DB, Number(getFormText(form, "eventId")));
+    if (event !== null) {
+      eventId = event.id;
+      serviceDate = event.starts_at.slice(0, 10);
+    }
+  }
 
   // If no file was picked, "uploaded" is a string, not a File.
   if (!(uploaded instanceof File) || uploaded.size === 0 || title === "" || !isValidDate(serviceDate)) {
-    return c.redirect("/admin/powerpoints?message=missing");
+    return goBack("missing");
   }
 
   // Stop before going over Cloudflare's free 10 GB of storage.
   if (wouldGoOverFreeStorage(await getStorageUsed(c.env.DB), uploaded.size)) {
-    return c.redirect("/admin/powerpoints?message=storage-full");
+    return goBack("storage-full");
   }
 
   const r2Key = makeStorageKey("powerpoints", uploaded.name);
@@ -117,19 +148,29 @@ routes.post("/admin/powerpoints", async (c) => {
   await c.env.MUSIC.put(r2Key, uploaded.stream(), {
     httpMetadata: { contentType: contentType },
   });
-  await addPowerpoint(c.env.DB, title, serviceDate, notes, r2Key, uploaded.name, contentType, uploaded.size);
+  await addPowerpoint(c.env.DB, {
+    title: title,
+    serviceDate: serviceDate,
+    notes: notes,
+    eventId: eventId,
+    r2Key: r2Key,
+    filename: uploaded.name,
+    contentType: contentType,
+    size: uploaded.size,
+  });
 
-  return c.redirect("/admin/powerpoints?message=saved");
+  return goBack("saved");
 });
 
 routes.post("/admin/powerpoints/:id/delete", async (c) => {
   const powerpointId = Number(c.req.param("id"));
+  const form = await c.req.parseBody();
   const powerpoint = await getPowerpoint(c.env.DB, powerpointId);
   if (powerpoint !== null) {
     await c.env.MUSIC.delete(powerpoint.r2_key);
     await deletePowerpointRecord(c.env.DB, powerpointId);
   }
-  return c.redirect("/admin/powerpoints");
+  return c.redirect(safeRedirectPath(getFormText(form, "returnTo") || "/admin/powerpoints"));
 });
 
 export default routes;
