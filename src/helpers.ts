@@ -1,0 +1,300 @@
+// Small helper functions used by many pages.
+
+import type { Context } from "hono";
+import type { AppEnv } from "./types";
+
+// ---------------------------------------------------------------------------
+// Dates and times
+//
+// Event times are saved as plain local text like "2026-11-01T10:00"
+// (that is exactly what the browser's date-and-time picker gives us).
+// That keeps things simple: no time zone maths when saving or showing them.
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns today's date in the choir's time zone, like "2026-10-26".
+ * We use it to decide which events are "upcoming".
+ */
+export function getTodaysDate(timeZone: string): string {
+  // "en-CA" happens to format dates as YYYY-MM-DD, which is what we want.
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return formatter.format(new Date());
+}
+
+/**
+ * Turns "2026-11-01T10:00" into something friendly like
+ * "Sunday, 1 November 2026 at 10:00 am".
+ */
+export function formatEventTime(localTime: string): string {
+  const datePart = localTime.slice(0, 10); // "2026-11-01"
+  const timePart = localTime.slice(11, 16) || "00:00"; // "10:00"
+
+  const year = Number(datePart.slice(0, 4));
+  const month = Number(datePart.slice(5, 7));
+  const day = Number(datePart.slice(8, 10));
+  const hour = Number(timePart.slice(0, 2));
+  const minute = Number(timePart.slice(3, 5));
+
+  // Build the date in UTC and also format it in UTC, so nothing shifts.
+  const date = new Date(Date.UTC(year, month - 1, day, hour, minute));
+  const formatter = new Intl.DateTimeFormat("en-NZ", {
+    timeZone: "UTC",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return formatter.format(date);
+}
+
+/**
+ * Cloudflare R2's free plan stores up to 10 GB. We stop uploads a little
+ * before that (at 9.5 GB) so the site never goes onto a paid plan.
+ */
+export const FREE_STORAGE_BYTES = 10_000_000_000;
+export const STORAGE_STOP_AT_BYTES = 9_500_000_000;
+
+/** True if adding this many bytes would go past the free storage. */
+export function wouldGoOverFreeStorage(alreadyUsed: number, adding: number): boolean {
+  return alreadyUsed + adding > STORAGE_STOP_AT_BYTES;
+}
+
+/**
+ * Turns "2026-10-26" into "Monday, 26 October 2026".
+ */
+export function formatDate(date: string): string {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  const day = Number(date.slice(8, 10));
+  const formatter = new Intl.DateTimeFormat("en-NZ", {
+    timeZone: "UTC",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  return formatter.format(new Date(Date.UTC(year, month - 1, day)));
+}
+
+/**
+ * Moves a date forwards or backwards by some days.
+ * addDays("2026-10-31", 1) gives "2026-11-01".
+ */
+export function addDays(date: string, days: number): string {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  const day = Number(date.slice(8, 10));
+  const moved = new Date(Date.UTC(year, month - 1, day + days));
+  return moved.toISOString().slice(0, 10);
+}
+
+/** True if the text looks like a date, "YYYY-MM-DD". */
+export function isValidDate(text: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(text);
+}
+
+// ---------------------------------------------------------------------------
+// Files
+// ---------------------------------------------------------------------------
+
+/** Turns a number of bytes into "512 KB" or "3.4 MB". */
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) {
+    return bytes + " B";
+  }
+  if (bytes < 1024 * 1024) {
+    return Math.round(bytes / 1024) + " KB";
+  }
+  if (bytes < 1024 * 1024 * 1024) {
+    return (bytes / 1024 / 1024).toFixed(1) + " MB";
+  }
+  return (bytes / 1024 / 1024 / 1024).toFixed(2) + " GB";
+}
+
+/** The kinds of music file we store, and how to show each one. */
+export const FILE_KIND_LABELS: Record<string, string> = {
+  sheet: "Sheet music",
+  chords: "Chord chart",
+  musescore: "MuseScore file",
+  lyrics: "Lyrics",
+  slides: "Lyrics slides",
+  recording: "Recording",
+  other: "Other",
+};
+
+/**
+ * The type of a file (its "content type", e.g. "application/pdf") from its
+ * name. browserType is what the browser said, if anything; browsers don't
+ * know some music file types, so we fill those in ourselves.
+ */
+export function workOutContentType(filename: string, browserType: string): string {
+  const name = filename.toLowerCase();
+  const knownTypes: Record<string, string> = {
+    ".cho": "text/plain; charset=utf-8",
+    ".chordpro": "text/plain; charset=utf-8",
+    ".txt": "text/plain; charset=utf-8",
+    ".mscz": "application/x-musescore",
+    ".mscx": "application/x-musescore+xml",
+    ".pdf": "application/pdf",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".odp": "application/vnd.oasis.opendocument.presentation",
+    ".odt": "application/vnd.oasis.opendocument.text",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".wav": "audio/wav",
+  };
+  for (const ending in knownTypes) {
+    if (name.endsWith(ending)) {
+      return knownTypes[ending];
+    }
+  }
+  return browserType || "application/octet-stream";
+}
+
+/**
+ * The key and version of a song file in one short line, e.g.
+ * "Key of D · with intro". Empty if the file has neither.
+ */
+export function describeFileLabels(musicKey: string, version: string): string {
+  const parts: string[] = [];
+  if (musicKey !== "") {
+    parts.push("Key of " + musicKey);
+  }
+  if (version !== "") {
+    parts.push(version);
+  }
+  return parts.join(" · ");
+}
+
+/**
+ * Sheet music, chord charts and MuseScore files are always public, because
+ * set lists link to them so anyone can see what the choir will sing.
+ * Recordings and other files follow EVERYTHING_PUBLIC.
+ */
+export function isAlwaysPublicKind(kind: string): boolean {
+  return kind === "sheet" || kind === "chords" || kind === "musescore";
+}
+
+/**
+ * Guesses what kind of music file this is from its name and type, e.g.
+ * "gloria.mscz" is a MuseScore file, "gloria.pptx" lyrics slides and
+ * "gloria-chords.docx" a chord chart.
+ * Admins can still pick the kind themselves when uploading.
+ */
+export function guessFileKind(filename: string, contentType: string): string {
+  const name = filename.toLowerCase();
+
+  if (name.endsWith(".mscz") || name.endsWith(".mscx")) {
+    return "musescore";
+  }
+  if (contentType.startsWith("audio/") || name.endsWith(".mp3") || name.endsWith(".m4a") || name.endsWith(".wav")) {
+    return "recording";
+  }
+  if (name.endsWith(".ppt") || name.endsWith(".pptx") || name.endsWith(".odp")) {
+    return "slides";
+  }
+  // Word documents with "lyric" in the name hold just the words.
+  if (name.includes("lyric") && (name.endsWith(".doc") || name.endsWith(".docx") || name.endsWith(".odt"))) {
+    return "lyrics";
+  }
+  // Word documents, text files and files with "chord" in the name.
+  if (
+    name.includes("chord") ||
+    name.endsWith(".doc") ||
+    name.endsWith(".docx") ||
+    name.endsWith(".txt") ||
+    name.endsWith(".odt") ||
+    name.endsWith(".cho") ||
+    name.endsWith(".chordpro")
+  ) {
+    return "chords";
+  }
+  if (name.endsWith(".pdf") || contentType.startsWith("image/")) {
+    return "sheet";
+  }
+  return "other";
+}
+
+// ---------------------------------------------------------------------------
+// Who is looking at the page?
+// ---------------------------------------------------------------------------
+
+/** True if someone is logged in. */
+export function isLoggedIn(c: Context<AppEnv>): boolean {
+  return c.get("user") !== null;
+}
+
+/** True if the logged-in person is an admin. */
+export function isAdmin(c: Context<AppEnv>): boolean {
+  const user = c.get("user");
+  return user !== null && user.role === "admin";
+}
+
+/**
+ * True if this visitor may see the members' pages: music, PowerPoints,
+ * rosters, set lists and members-only events.
+ *
+ * Controlled by EVERYTHING_PUBLIC in wrangler.jsonc:
+ *   "yes" -> everyone can see them, no login needed
+ *   "no"  -> only logged-in members can see them
+ *
+ * (Admin pages always need an admin login, whatever this is set to.)
+ */
+export function canSeeMemberPages(c: Context<AppEnv>): boolean {
+  if (c.env.EVERYTHING_PUBLIC === "yes") {
+    return true;
+  }
+  return isLoggedIn(c);
+}
+
+// ---------------------------------------------------------------------------
+// Forms
+// ---------------------------------------------------------------------------
+
+/**
+ * Reads one text box from a submitted form and trims extra spaces.
+ * Returns "" if the box was empty or missing.
+ */
+export function getFormText(form: Record<string, unknown>, name: string): string {
+  const value = form[name];
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  return "";
+}
+
+/**
+ * Only keeps web links that start with http:// or https://.
+ * (This stops someone saving a harmful "javascript:" link.)
+ * Returns "" for anything else.
+ */
+export function cleanWebLink(link: string): string {
+  if (link.startsWith("https://") || link.startsWith("http://")) {
+    return link;
+  }
+  return "";
+}
+
+/**
+ * After logging in we send people back to the page they wanted.
+ * This makes sure that page is on our own site (not some other website).
+ */
+export function safeRedirectPath(path: string | undefined): string {
+  if (path && path.startsWith("/") && !path.startsWith("//")) {
+    return path;
+  }
+  return "/";
+}

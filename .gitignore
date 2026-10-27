@@ -1,4 +1,6 @@
-node_modules/
+node_modules
 .wrangler/
 .dev.vars
 dist/
+import_plan.csv
+song_list.csv

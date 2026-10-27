@@ -1,0 +1,60 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "choir-site",
+	"main": "src/index.tsx",
+	"compatibility_date": "2026-10-01",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	// Static files in ./public (CSS, images, logo) are served for free
+	// before the Worker runs.
+	"assets": {
+		"directory": "./public"
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "choir-db",
+			// Replace with the id printed by `npx wrangler d1 create choir-db`
+			"database_id": "11b5da6b-5d25-4a99-b089-2040b44b0f0f",
+			"migrations_dir": "migrations"
+		},
+		{
+			"binding": "choir_db",
+			"database_name": "choir-db",
+			"database_id": "11b5da6b-5d25-4a99-b089-2040b44b0f0f",
+			"remote": true
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "MUSIC",
+			"bucket_name": "choir-music"
+		},
+		{
+			"bucket_name": "choir-music",
+			"binding": "choir_music",
+			"remote": true
+		}
+	],
+	"vars": {
+		"CHOIR_NAME": "Family Group",
+		// "yes" = everyone can see music, PowerPoints, rosters, set lists
+		//         and members-only events, without logging in.
+		// "no"  = only logged-in members can see those.
+		// Admin pages always need an admin login either way.
+		"EVERYTHING_PUBLIC": "yes",
+		// Which local calendar Universalis uses for the daily readings.
+		// "" = the General Roman Calendar. To use a local one, choose it on
+		// universalis.com and copy the part of the address between
+		// "universalis.com/" and the date, then put it here.
+		"UNIVERSALIS_CALENDAR": "usa",
+		// Used for "upcoming" event lists.
+		"TIMEZONE": "Pacific/Auckland"
+	}
+	// Secrets (set with `npx wrangler secret put NAME`, never put them here):
+	//   BETTER_AUTH_SECRET  random string, 32+ characters
+	//   BETTER_AUTH_URL     e.g. https://ourchoir.nz
+	//   SETUP_TOKEN         one-time code used to create the first admin account
+	//   IMPORT_TOKEN        long random code for tools/import_music.py (optional)
+}

@@ -1,0 +1,799 @@
+/* ==========================================================================
+   The look of the whole site: clean and modern, with light and dark modes.
+
+   To change the colours, edit the two blocks of "--" values just below:
+   the first is light mode, the second is dark mode.
+   ========================================================================== */
+
+:root {
+  --accent: #2d4a7c;            /* links, buttons, headings */
+  --accent-soft: #e8edf6;       /* light tint of the accent, for pills */
+  --gold: #c9a34e;              /* small highlights */
+  --text: #1d1d1f;
+  --muted: #6e6e73;
+  --background: #fbfaf7;
+  --surface: #ffffff;           /* cards and tables */
+  --border: #e7e5e0;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.04);
+  --shadow-lift: 0 2px 4px rgba(0, 0, 0, 0.05), 0 12px 32px rgba(45, 74, 124, 0.12);  /* cards you hover */
+  --radius: 18px;
+  --danger: #c0392b;
+  --glow: rgba(45, 74, 124, 0.10);  /* soft colour wash at the top of each page */
+  color-scheme: light;
+}
+
+/* Dark mode colours. Used when the device is in dark mode (unless the
+   visitor picked light with the half-circle button), or when they picked dark. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --accent: #9db8e8;
+    --accent-soft: #1f2a3d;
+    --gold: #e0be6e;
+    --text: #f2f2f2;
+    --muted: #a1a1a6;
+    --background: #121316;
+    --surface: #1b1c20;
+    --border: #2c2d33;
+    --shadow: none;
+  --shadow-lift: 0 12px 32px rgba(0, 0, 0, 0.4);
+    --shadow-lift: 0 12px 32px rgba(0, 0, 0, 0.4);
+    --danger: #ff6b5e;
+    --glow: rgba(157, 184, 232, 0.10);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --accent: #9db8e8;
+  --accent-soft: #1f2a3d;
+  --gold: #e0be6e;
+  --text: #f2f2f2;
+  --muted: #a1a1a6;
+  --background: #121316;
+  --surface: #1b1c20;
+  --border: #2c2d33;
+  --shadow: none;
+  --shadow-lift: 0 12px 32px rgba(0, 0, 0, 0.4);
+  --danger: #ff6b5e;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  /* The device's own modern font: San Francisco, Segoe UI, Roboto... */
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 17px;
+  color: var(--text);
+  /* A soft glow of colour behind the top of the page, fading into the background */
+  background: radial-gradient(1000px 420px at 50% -120px, var(--glow), transparent) no-repeat, var(--background);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Links: accent colour, no underline until you point at them */
+a {
+  color: var(--accent);
+  font-weight: 500;
+  text-decoration: none;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1.5px;
+  transition: color 0.15s, background 0.15s;
+}
+a:hover { text-decoration: underline; }
+/* Links that look like cards, pills or buttons never get an underline */
+.site-name:hover, .month-event:hover, .admin-menu a:hover { text-decoration: none; }
+
+/* "Back to ..." links at the top of a page, with an arrow in front */
+a.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+a.back-link::before { content: "\2190"; transition: transform 0.15s; }  /* ← */
+a.back-link:hover { color: var(--accent); text-decoration: none; }
+a.back-link:hover::before { transform: translateX(-3px); }
+
+main {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 32px 16px 64px;
+}
+
+/* ---- Header and menu ---- */
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  /* See-through, blurred background, so the page shows faintly behind it. */
+  background: color-mix(in srgb, var(--background) 80%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+
+.header-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 10px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.site-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: -0.01em;
+}
+.site-name img { border-radius: 9px; }
+
+.site-header nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  /* On phones the menu scrolls sideways instead of wrapping. */
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.site-header nav a,
+.nav-button,
+.theme-toggle {
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.95rem;
+  padding: 6px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-weight: normal;
+  cursor: pointer;
+}
+.site-header nav a:hover,
+.nav-button:hover,
+.theme-toggle:hover { background: var(--accent-soft); }
+
+.theme-toggle { line-height: 0; padding: 8px 10px; }
+
+.site-footer {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+  border-top: 1px solid var(--border);
+  padding: 24px 16px 40px;
+}
+.site-footer p { margin: 4px 0; }
+.site-footer a { color: var(--muted); }
+.site-footer a:hover { color: var(--text); }
+
+/* ---- Text ---- */
+
+h1, h2, h3 { line-height: 1.2; letter-spacing: -0.02em; }
+h1 { font-size: clamp(2rem, 5vw, 2.8rem); font-weight: 800; letter-spacing: -0.035em; margin: 0 0 16px; }
+h2 { font-size: 1.4rem; margin: 40px 0 12px; }
+h3 { font-size: 1.1rem; }
+
+.muted { color: var(--muted); }
+.event-when { font-weight: 600; }
+
+/* The big welcome at the top of the home page. */
+.hero { padding: 48px 0 24px; }
+.hero h1 {
+  font-size: clamp(2.6rem, 8vw, 4.2rem);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1.05;
+  margin-bottom: 20px;
+  /* The heading fades from the text colour into the accent colour */
+  background: linear-gradient(120deg, var(--text) 30%, var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.hero-text { font-size: 1.2rem; color: var(--muted); max-width: 34em; margin: 0 0 28px; }
+.hero-buttons .button { padding: 12px 22px; }
+
+/* A small coloured label above a big heading */
+.eyebrow {
+  display: inline-block;
+  margin: 0 0 16px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* A section heading with a link on the right, e.g. "Full calendar →" */
+.section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 48px 0 14px;
+}
+.section-heading h2 { margin: 0; }
+.section-heading a { font-size: 0.95rem; white-space: nowrap; }
+
+/* "For singers": cards in a grid, two or more per row on bigger screens */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.feature-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 20px 22px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.feature-card strong { font-size: 1.05rem; }
+.feature-card .muted { font-size: 0.92rem; font-weight: 400; line-height: 1.5; }
+.feature-arrow { position: absolute; top: 18px; right: 20px; color: var(--accent); transition: transform 0.15s; }
+.feature-card:hover { text-decoration: none; transform: translateY(-2px); border-color: var(--accent); box-shadow: var(--shadow-lift); }
+.feature-card:hover .feature-arrow { transform: translateX(3px); }
+
+/* ---- Cards: event lists, song lists, files, admin menu ---- */
+
+.event-list, .song-list, .file-list, .admin-menu {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.event-list li, .song-list li, .file-list li, .admin-menu li, .card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px 18px;
+}
+
+/* Event cards: the whole card is the link */
+.event-list li { padding: 0; transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s; }
+.event-list li:hover { transform: translateY(-2px); border-color: var(--accent); box-shadow: var(--shadow-lift); }
+.event-card { display: flex; align-items: center; gap: 16px; padding: 14px 18px; color: var(--text); }
+.event-card:hover { text-decoration: none; }
+.event-card-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.event-card-text strong { font-size: 1.05rem; color: var(--text); }
+.event-card-text .muted { font-size: 0.92rem; font-weight: 400; }
+
+/* The little calendar page on each event card */
+.date-badge {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 60px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  line-height: 1;
+}
+.date-badge-month { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.date-badge-day { font-size: 1.5rem; font-weight: 800; margin-top: 4px; letter-spacing: -0.02em; }
+
+/* A small grey label, e.g. "Members only" */
+.tag {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+/* Song cards: title and author on the left, key on the right */
+.song-list li { padding: 0; }
+.song-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 12px;
+  padding: 14px 18px;
+  color: var(--text);
+}
+.song-card:hover { text-decoration: none; }
+.song-card strong { font-size: 1.05rem; }
+.song-card .muted { grid-column: 1; font-size: 0.92rem; font-weight: 400; }
+.song-card-key { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 0.85rem; font-weight: 600; color: var(--accent); }
+
+/* Song and admin cards lift a little when you point at them */
+.song-list li, .admin-menu li { transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s; }
+.song-list li:hover, .admin-menu li:hover { transform: translateY(-2px); border-color: var(--accent); box-shadow: var(--shadow-lift); }
+
+.admin-menu { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.admin-menu a { font-weight: 600; font-size: 1.05rem; }
+.admin-menu p { margin: 4px 0 0; font-size: 0.92rem; }
+
+.card { margin-bottom: 12px; }
+
+/* ---- Tables ---- */
+
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+th, td {
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+tr:last-child th, tr:last-child td { border-bottom: none; }
+thead th { font-size: 0.85rem; color: var(--muted); font-weight: 600; }
+
+.user-table { display: block; overflow-x: auto; }
+
+audio { width: 100%; margin-top: 8px; }
+
+/* ---- Forms ---- */
+
+form label {
+  display: block;
+  margin-bottom: 14px;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+form input[type="text"],
+form input[type="email"],
+form input[type="password"],
+form input[type="search"],
+form input[type="url"],
+form input[type="date"],
+form input[type="datetime-local"],
+form input[type="file"],
+form textarea,
+form select {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  font: inherit;
+  font-weight: normal;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+form input:focus, form textarea:focus, form select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+form label.checkbox { font-weight: normal; }
+form label.checkbox input { margin-right: 8px; }
+
+/* A form laid out in one line (wraps on phones). */
+form.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+form.row input, form.row select { width: auto; flex: 1 1 160px; margin: 0; }
+
+form.inline { display: inline; }
+form.search { display: flex; gap: 8px; margin-bottom: 20px; }
+form.search input, form.search select { margin: 0; }
+
+button, .button {
+  display: inline-block;
+  background: var(--accent);
+  color: var(--background);
+  border: none;
+  border-radius: 999px;
+  padding: 10px 20px;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+button:hover, .button:hover { filter: brightness(1.1); text-decoration: none; }
+
+/* A quieter, outlined button, for "Open", "Next day", "View on site"... */
+.button-secondary {
+  background: var(--surface);
+  color: var(--accent);
+  border: 1px solid var(--border);
+}
+.button-secondary:hover { filter: none; border-color: var(--accent); background: var(--accent-soft); }
+
+/* A row of buttons with space between them */
+p:has(> .button) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.readings-today-link, .month-today-link { justify-content: center; }
+
+button.danger { background: var(--danger); }
+
+/* A button that looks like a link. */
+button.link-button {
+  background: none;
+  color: var(--accent);
+  padding: 0;
+  font-weight: 500;
+}
+button.link-button:hover { text-decoration: underline; filter: none; }
+button.danger-text { color: var(--danger); }
+
+.narrow { max-width: 520px; }
+
+fieldset.reading-fields {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin: 0 0 16px;
+  padding: 8px 14px 0;
+}
+fieldset.reading-fields legend { font-weight: 700; color: var(--accent); padding: 0 6px; }
+
+/* ---- Messages ---- */
+
+.notice { padding: 12px 16px; border-radius: 10px; }
+.notice-error { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.notice-success { background: color-mix(in srgb, #2e9b55 14%, transparent); color: #2e9b55; }
+
+/* Long text typed by an admin: keep its line breaks. */
+.long-text { white-space: pre-wrap; margin-top: 16px; }
+
+/* ---- Calendar and set lists ---- */
+
+.month-heading {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin: 36px 0 12px;
+}
+
+.setlist { padding-left: 0; list-style: none; counter-reset: song; display: grid; gap: 10px; }
+.setlist li {
+  counter-increment: song;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px 18px 14px 56px;
+  position: relative;
+}
+/* The song number in a circle on the left. */
+.setlist li::before {
+  content: counter(song);
+  position: absolute;
+  left: 16px;
+  top: 14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.9rem;
+  display: grid;
+  place-items: center;
+}
+.setlist a { text-decoration: none; }
+.setlist-part {
+  display: block;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+/* Small pill-shaped links: Sheet music, Chord chart, YouTube. */
+.setlist-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.setlist-links a {
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 4px 12px;
+  text-decoration: none;
+}
+.setlist-links a:hover { filter: brightness(0.96); }
+
+/* ---- Readings page (laid out like the USCCB daily readings) ---- */
+
+.readings-page { max-width: 700px; margin: 0 auto; }
+
+.readings-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.readings-nav > a { text-decoration: none; font-weight: 600; }
+
+.readings-date-picker { display: flex; align-items: center; gap: 8px; }
+.readings-date-picker input { margin: 0; width: auto; }
+.readings-today-link { text-align: center; margin: 8px 0 0; }
+
+/* The "Read on USCCB" strip above the readings */
+.usccb-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin: 20px 0 0;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  font-size: 0.95rem;
+}
+
+.readings-header { text-align: center; margin: 32px 0 8px; }
+.readings-header h1 { margin: 6px 0; font-size: clamp(1.6rem, 4.5vw, 2.2rem); }
+.readings-date {
+  margin: 0;
+  color: var(--gold);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.readings-lectionary { margin: 4px 0 0; color: var(--muted); }
+
+.reading {
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+  margin-top: 28px;
+}
+.reading h2 { margin: 0 0 4px; font-size: 1.3rem; }
+.reading-reference { margin: 0 0 12px; color: var(--accent); font-weight: 600; }
+
+/* Readings are for reading: a little bigger, with roomy lines. */
+.reading-text { white-space: pre-wrap; font-size: 1.1rem; line-height: 1.8; }
+.reading-html { font-size: 1.1rem; line-height: 1.8; }
+
+.readings-copyright { text-align: center; font-size: 0.8rem; margin-top: 28px; }
+.readings-source { text-align: center; margin-top: 24px; font-size: 0.95rem; }
+
+/* ---- Calendar: view switch and month grid ---- */
+
+.calendar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.calendar-controls form.search { margin: 0; }
+
+/* "Upcoming | Month": two pills side by side, the chosen one filled in. */
+.view-switch {
+  display: inline-flex;
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 4px;
+}
+.view-switch a {
+  padding: 6px 16px;
+  border-radius: 999px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--accent);
+}
+.view-switch a.active { background: var(--surface); box-shadow: var(--shadow); color: var(--text); }
+
+.month-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.month-nav h2 { margin: 0; }
+.month-nav a { text-decoration: none; font-weight: 600; }
+.month-today-link { text-align: center; margin: 4px 0 0; font-size: 0.9rem; }
+
+/* Seven columns, one per weekday. */
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  margin-top: 16px;
+  background: var(--border);
+  gap: 1px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.month-weekday {
+  background: var(--surface);
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 8px 0;
+}
+
+.month-day {
+  background: var(--surface);
+  min-height: 104px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.month-day.other-month { background: var(--background); }
+.month-day.other-month .day-number { color: var(--muted); opacity: 0.6; }
+
+.day-number { font-size: 0.85rem; font-weight: 600; width: 26px; height: 26px; display: grid; place-items: center; }
+/* Today's date in a filled circle, like Google Calendar. */
+.month-day.today .day-number { background: var(--accent); color: var(--background); border-radius: 50%; }
+
+.month-event {
+  display: block;
+  font-size: 0.78rem;
+  line-height: 1.3;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 6px;
+  padding: 3px 6px;
+  text-decoration: none;
+  /* Long titles are cut short with "..." */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.month-event:hover { filter: brightness(0.95); }
+.month-event-time { font-weight: 700; }
+
+/* ---- Song resources: file rows, previews ---- */
+
+.file-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.file-actions { display: flex; align-items: center; gap: 12px; }
+.button-small { padding: 6px 14px; font-size: 0.85rem; }
+
+/* Each section on a song page (Sheet music, Chord charts...) is a dropdown */
+details.file-section { margin-top: 16px; }
+details.file-section > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  cursor: pointer;
+  list-style: none;              /* hide the browser's own triangle */
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+details.file-section > summary::-webkit-details-marker { display: none; }
+details.file-section > summary:hover { border-color: var(--accent); }
+/* Our own arrow: points right when closed, down when open */
+details.file-section > summary::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--accent);
+  border-bottom: 2px solid var(--accent);
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+details.file-section[open] > summary::before { transform: rotate(45deg); }
+.file-section-heading { font-size: 1.15rem; font-weight: 650; }
+.count-pill {
+  margin-left: auto;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+/* The key and version of a file, e.g. "Key of D · with intro". */
+.file-labels {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+/* The "Replace" box under each file on a song's admin page. */
+details.replace-file { margin-top: 4px; font-size: 0.9rem; }
+details.replace-file summary { cursor: pointer; color: var(--accent); }
+details.replace-file form { margin-top: 6px; }
+details.file-section > p { margin: 12px 4px 0; }
+details.file-section > .file-list { margin: 10px 0 0 16px; }  /* indent files under their heading */
+
+details.preview { margin-top: 10px; }
+details.preview summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--accent);
+  width: fit-content;
+}
+details.preview iframe {
+  width: 100%;
+  height: 70vh;
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+}
+details.preview img { max-width: 100%; margin-top: 10px; border-radius: 10px; }
+
+.phone-only { display: none; }
+
+/* ---- Phones ---- */
+
+@media (max-width: 600px) {
+  body { font-size: 16px; }
+  .header-inner { padding: 8px 12px; }
+  /* Menu goes under the name and scrolls sideways. */
+  .site-header nav { width: 100%; margin: 0 -8px; }
+  /* Readings: previous/next on one line, the date picker underneath. */
+  .readings-date-picker { order: 3; flex-basis: 100%; justify-content: center; }
+  /* Month grid: smaller days, and events become small coloured bars. */
+  .month-day { min-height: 64px; padding: 3px; }
+  .month-event { font-size: 0; padding: 0; height: 6px; border-radius: 3px; background: var(--accent); }
+  .day-number { width: 22px; height: 22px; font-size: 0.75rem; }
+  .phone-only { display: block; }
+}
+
+/* ---- Admin: how much free storage is used ---- */
+
+.storage-meter {
+  margin: 0 0 24px;
+  padding: 14px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.storage-meter p { margin: 0; }
+.storage-meter .muted { font-size: 0.88rem; }
+.storage-bar { height: 8px; margin: 10px 0; border-radius: 999px; background: var(--accent-soft); overflow: hidden; }
+.storage-bar-fill { height: 100%; border-radius: 999px; background: var(--accent); }

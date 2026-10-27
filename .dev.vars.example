@@ -1,0 +1,5 @@
+# Copy to .dev.vars for local development (never commit .dev.vars)
+BETTER_AUTH_SECRET=change-me-to-a-long-random-string-at-least-32-chars
+BETTER_AUTH_URL=http://localhost:8787
+SETUP_TOKEN=local-setup-code
+IMPORT_TOKEN=local-import-code

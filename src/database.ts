@@ -1,0 +1,531 @@
+// Every database query the site uses lives in this file.
+// Each function does one job and has a plain name, so the page code
+// can say things like `await getUpcomingEvents(db, today)`.
+//
+// The tables are created by the files in the /migrations folder.
+
+import type { EventRow, ParishRow, PowerpointRow, ReadingsRow, RosterRow, SetlistRow, SongFileRow, SongRow } from "./types";
+
+// ===========================================================================
+// Parishes (the churches the choir sings at)
+// ===========================================================================
+
+export async function getParishes(db: D1Database): Promise<ParishRow[]> {
+  const result = await db.prepare("SELECT * FROM parishes ORDER BY name COLLATE NOCASE").all<ParishRow>();
+  return result.results;
+}
+
+export async function getParish(db: D1Database, parishId: number): Promise<ParishRow | null> {
+  return await db.prepare("SELECT * FROM parishes WHERE id = ?").bind(parishId).first<ParishRow>();
+}
+
+export async function createParish(db: D1Database, name: string, address: string, notes: string): Promise<void> {
+  await db.prepare("INSERT INTO parishes (name, address, notes) VALUES (?, ?, ?)").bind(name, address, notes).run();
+}
+
+export async function updateParish(db: D1Database, parishId: number, name: string, address: string, notes: string): Promise<void> {
+  await db
+    .prepare("UPDATE parishes SET name = ?, address = ?, notes = ? WHERE id = ?")
+    .bind(name, address, notes, parishId)
+    .run();
+}
+
+export async function deleteParish(db: D1Database, parishId: number): Promise<void> {
+  // Events at this parish are kept; they just lose their parish
+  // (see "ON DELETE SET NULL" in the migrations).
+  await db.prepare("DELETE FROM parishes WHERE id = ?").bind(parishId).run();
+}
+
+// ===========================================================================
+// Events
+// ===========================================================================
+
+// Every event query starts like this, so each event comes with the name
+// and address of its parish (LEFT JOIN = keep events that have no parish).
+const SELECT_EVENTS = `
+  SELECT events.*, parishes.name AS parish_name, parishes.address AS parish_address
+  FROM events
+  LEFT JOIN parishes ON parishes.id = events.parish_id`;
+
+/**
+ * Events from today onwards, soonest first.
+ * includePrivate: also include members-only events.
+ * parishId: only events at this parish (or null for every parish).
+ */
+export async function getUpcomingEvents(
+  db: D1Database,
+  today: string,
+  includePrivate: boolean,
+  parishId: number | null,
+): Promise<EventRow[]> {
+  let sql = SELECT_EVENTS + " WHERE events.starts_at >= ?";
+  const values: (string | number)[] = [today];
+
+  if (!includePrivate) {
+    sql = sql + " AND events.is_public = 1";
+  }
+  if (parishId !== null) {
+    sql = sql + " AND events.parish_id = ?";
+    values.push(parishId);
+  }
+  sql = sql + " ORDER BY events.starts_at";
+
+  const result = await db.prepare(sql).bind(...values).all<EventRow>();
+  return result.results;
+}
+
+/**
+ * Events between two dates (both "YYYY-MM-DD", the second one not
+ * included), soonest first. Used by the month view of the calendar.
+ */
+export async function getEventsBetween(
+  db: D1Database,
+  fromDate: string,
+  toDate: string,
+  includePrivate: boolean,
+  parishId: number | null,
+): Promise<EventRow[]> {
+  let sql = SELECT_EVENTS + " WHERE events.starts_at >= ? AND events.starts_at < ?";
+  const values: (string | number)[] = [fromDate, toDate];
+
+  if (!includePrivate) {
+    sql = sql + " AND events.is_public = 1";
+  }
+  if (parishId !== null) {
+    sql = sql + " AND events.parish_id = ?";
+    values.push(parishId);
+  }
+  sql = sql + " ORDER BY events.starts_at";
+
+  const result = await db.prepare(sql).bind(...values).all<EventRow>();
+  return result.results;
+}
+
+/** Every event, newest first (for the admin pages). */
+export async function getAllEvents(db: D1Database): Promise<EventRow[]> {
+  const result = await db.prepare(SELECT_EVENTS + " ORDER BY events.starts_at DESC").all<EventRow>();
+  return result.results;
+}
+
+export async function getEvent(db: D1Database, eventId: number): Promise<EventRow | null> {
+  return await db.prepare(SELECT_EVENTS + " WHERE events.id = ?").bind(eventId).first<EventRow>();
+}
+
+export type EventDetails = {
+  title: string;
+  description: string;
+  parishId: number | null;
+  location: string;
+  startsAt: string;
+  endsAt: string;
+  isPublic: boolean;
+};
+
+/** Saves a new event and returns its id. */
+export async function createEvent(db: D1Database, event: EventDetails): Promise<number> {
+  const row = await db
+    .prepare(
+      `INSERT INTO events (title, description, parish_id, location, starts_at, ends_at, is_public)
+       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+    )
+    .bind(
+      event.title,
+      event.description,
+      event.parishId,
+      event.location,
+      event.startsAt,
+      event.endsAt || null,
+      event.isPublic ? 1 : 0,
+    )
+    .first<{ id: number }>();
+  return row!.id;
+}
+
+export async function updateEvent(db: D1Database, eventId: number, event: EventDetails): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE events
+       SET title = ?, description = ?, parish_id = ?, location = ?, starts_at = ?, ends_at = ?, is_public = ?
+       WHERE id = ?`,
+    )
+    .bind(
+      event.title,
+      event.description,
+      event.parishId,
+      event.location,
+      event.startsAt,
+      event.endsAt || null,
+      event.isPublic ? 1 : 0,
+      eventId,
+    )
+    .run();
+}
+
+export async function deleteEvent(db: D1Database, eventId: number): Promise<void> {
+  // The event's roster and set list are removed with it
+  // (see "ON DELETE CASCADE" in the migrations).
+  await db.prepare("DELETE FROM events WHERE id = ?").bind(eventId).run();
+}
+
+// ===========================================================================
+// Volunteer rosters (who is doing what at an event)
+// ===========================================================================
+
+export async function getRoster(db: D1Database, eventId: number): Promise<RosterRow[]> {
+  const result = await db
+    .prepare("SELECT * FROM roster_entries WHERE event_id = ? ORDER BY role, person_name")
+    .bind(eventId)
+    .all<RosterRow>();
+  return result.results;
+}
+
+export async function addRosterEntry(db: D1Database, eventId: number, role: string, personName: string, notes: string): Promise<void> {
+  await db
+    .prepare("INSERT INTO roster_entries (event_id, role, person_name, notes) VALUES (?, ?, ?, ?)")
+    .bind(eventId, role, personName, notes)
+    .run();
+}
+
+export async function deleteRosterEntry(db: D1Database, entryId: number): Promise<void> {
+  await db.prepare("DELETE FROM roster_entries WHERE id = ?").bind(entryId).run();
+}
+
+// ===========================================================================
+// Set lists (which songs are sung at an event, in order)
+// ===========================================================================
+
+export async function getSetlist(db: D1Database, eventId: number): Promise<SetlistRow[]> {
+  const result = await db
+    .prepare(
+      `SELECT setlist_items.*, songs.title, songs.author, songs.song_key, songs.youtube_url, songs.sheet_music_url
+       FROM setlist_items
+       JOIN songs ON songs.id = setlist_items.song_id
+       WHERE setlist_items.event_id = ?
+       ORDER BY setlist_items.position`,
+    )
+    .bind(eventId)
+    .all<SetlistRow>();
+  return result.results;
+}
+
+/** Adds a song to the end of an event's set list. */
+export async function addSongToSetlist(db: D1Database, eventId: number, songId: number, notes: string): Promise<void> {
+  const last = await db
+    .prepare("SELECT MAX(position) AS position FROM setlist_items WHERE event_id = ?")
+    .bind(eventId)
+    .first<{ position: number | null }>();
+  const nextPosition = (last?.position ?? 0) + 1;
+
+  await db
+    .prepare("INSERT INTO setlist_items (event_id, song_id, position, notes) VALUES (?, ?, ?, ?)")
+    .bind(eventId, songId, nextPosition, notes)
+    .run();
+}
+
+export async function removeSongFromSetlist(db: D1Database, itemId: number): Promise<void> {
+  await db.prepare("DELETE FROM setlist_items WHERE id = ?").bind(itemId).run();
+}
+
+// ===========================================================================
+// Songs
+// ===========================================================================
+
+/** All songs A to Z, or only the ones matching a search. */
+export async function getSongs(db: D1Database, search: string): Promise<SongRow[]> {
+  if (search === "") {
+    const result = await db.prepare("SELECT * FROM songs ORDER BY title COLLATE NOCASE").all<SongRow>();
+    return result.results;
+  }
+  const pattern = "%" + search + "%";
+  const result = await db
+    .prepare("SELECT * FROM songs WHERE title LIKE ? OR author LIKE ? ORDER BY title COLLATE NOCASE")
+    .bind(pattern, pattern)
+    .all<SongRow>();
+  return result.results;
+}
+
+export async function getSong(db: D1Database, songId: number): Promise<SongRow | null> {
+  return await db.prepare("SELECT * FROM songs WHERE id = ?").bind(songId).first<SongRow>();
+}
+
+export type SongDetails = {
+  title: string;
+  author: string;
+  songKey: string;
+  ccliNumber: string;
+  notes: string;
+  youtubeUrl: string;
+  sheetMusicUrl: string;
+};
+
+export async function createSong(db: D1Database, song: SongDetails): Promise<number> {
+  const row = await db
+    .prepare(
+      `INSERT INTO songs (title, author, song_key, ccli_number, notes, youtube_url, sheet_music_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+    )
+    .bind(song.title, song.author, song.songKey, song.ccliNumber, song.notes, song.youtubeUrl, song.sheetMusicUrl)
+    .first<{ id: number }>();
+  return row!.id;
+}
+
+export async function updateSong(db: D1Database, songId: number, song: SongDetails): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE songs
+       SET title = ?, author = ?, song_key = ?, ccli_number = ?, notes = ?, youtube_url = ?, sheet_music_url = ?
+       WHERE id = ?`,
+    )
+    .bind(song.title, song.author, song.songKey, song.ccliNumber, song.notes, song.youtubeUrl, song.sheetMusicUrl, songId)
+    .run();
+}
+
+export async function deleteSong(db: D1Database, songId: number): Promise<void> {
+  await db.prepare("DELETE FROM songs WHERE id = ?").bind(songId).run();
+}
+
+// ===========================================================================
+// Song files (the actual files are in R2; this is the list of them)
+// ===========================================================================
+
+export async function getSongFiles(db: D1Database, songId: number): Promise<SongFileRow[]> {
+  const result = await db
+    .prepare("SELECT * FROM song_files WHERE song_id = ? ORDER BY kind, music_key, version, filename")
+    .bind(songId)
+    .all<SongFileRow>();
+  return result.results;
+}
+
+/**
+ * The sheet music, chord charts and MuseScore files for every song in an
+ * event's set list,
+ * so the event page can link straight to them.
+ */
+export async function getSheetFilesForEvent(db: D1Database, eventId: number): Promise<SongFileRow[]> {
+  const result = await db
+    .prepare(
+      `SELECT song_files.*
+       FROM song_files
+       JOIN setlist_items ON setlist_items.song_id = song_files.song_id
+       WHERE setlist_items.event_id = ? AND song_files.kind IN ('sheet', 'chords', 'musescore')
+       ORDER BY song_files.kind, song_files.filename`,
+    )
+    .bind(eventId)
+    .all<SongFileRow>();
+  return result.results;
+}
+
+export async function getSongFile(db: D1Database, fileId: number): Promise<SongFileRow | null> {
+  return await db.prepare("SELECT * FROM song_files WHERE id = ?").bind(fileId).first<SongFileRow>();
+}
+
+export type NewSongFile = {
+  songId: number;
+  kind: string;
+  musicKey: string;
+  version: string;
+  r2Key: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  sourcePath: string; // "" when uploaded on the website
+  sourceHash: string; // "" when uploaded on the website
+};
+
+export async function addSongFile(db: D1Database, file: NewSongFile): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO song_files (song_id, kind, music_key, version, r2_key, filename, content_type, size, source_path, source_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      file.songId,
+      file.kind,
+      file.musicKey,
+      file.version,
+      file.r2Key,
+      file.filename,
+      file.contentType,
+      file.size,
+      file.sourcePath,
+      file.sourceHash,
+    )
+    .run();
+}
+
+/**
+ * Points an existing song file at a new copy in R2, e.g. after the file
+ * was edited. Its kind, key and version stay the same.
+ */
+export async function replaceSongFileContents(
+  db: D1Database,
+  fileId: number,
+  r2Key: string,
+  filename: string,
+  contentType: string,
+  size: number,
+  sourceHash: string,
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE song_files
+       SET r2_key = ?, filename = ?, content_type = ?, size = ?, source_hash = ?, uploaded_at = datetime('now')
+       WHERE id = ?`,
+    )
+    .bind(r2Key, filename, contentType, size, sourceHash, fileId)
+    .run();
+}
+
+/** Finds a song by its exact title, ignoring upper and lower case. */
+export async function findSongByTitle(db: D1Database, title: string): Promise<SongRow | null> {
+  return await db.prepare("SELECT * FROM songs WHERE title = ? COLLATE NOCASE").bind(title).first<SongRow>();
+}
+
+/** Every file the bulk import has already uploaded, with its fingerprint. */
+export async function getImportedFiles(db: D1Database): Promise<{ source_path: string; source_hash: string }[]> {
+  const result = await db
+    .prepare("SELECT source_path, source_hash FROM song_files WHERE source_path != ''")
+    .all<{ source_path: string; source_hash: string }>();
+  return result.results;
+}
+
+/** The song file the bulk import made from this file on your computer, if any. */
+export async function getSongFileBySourcePath(db: D1Database, sourcePath: string): Promise<SongFileRow | null> {
+  return await db.prepare("SELECT * FROM song_files WHERE source_path = ?").bind(sourcePath).first<SongFileRow>();
+}
+
+export async function deleteSongFileRecord(db: D1Database, fileId: number): Promise<void> {
+  await db.prepare("DELETE FROM song_files WHERE id = ?").bind(fileId).run();
+}
+
+// ===========================================================================
+// PowerPoint archive (the files are in R2; this is the list of them)
+// ===========================================================================
+
+/** All PowerPoints, newest service first, or only those matching a search. */
+export async function getPowerpoints(db: D1Database, search: string): Promise<PowerpointRow[]> {
+  if (search === "") {
+    const result = await db.prepare("SELECT * FROM powerpoints ORDER BY service_date DESC, title").all<PowerpointRow>();
+    return result.results;
+  }
+  const pattern = "%" + search + "%";
+  const result = await db
+    .prepare("SELECT * FROM powerpoints WHERE title LIKE ? OR notes LIKE ? OR service_date LIKE ? ORDER BY service_date DESC, title")
+    .bind(pattern, pattern, pattern)
+    .all<PowerpointRow>();
+  return result.results;
+}
+
+export async function getPowerpoint(db: D1Database, powerpointId: number): Promise<PowerpointRow | null> {
+  return await db.prepare("SELECT * FROM powerpoints WHERE id = ?").bind(powerpointId).first<PowerpointRow>();
+}
+
+export async function addPowerpoint(
+  db: D1Database,
+  title: string,
+  serviceDate: string,
+  notes: string,
+  r2Key: string,
+  filename: string,
+  contentType: string,
+  size: number,
+): Promise<void> {
+  await db
+    .prepare(
+      "INSERT INTO powerpoints (title, service_date, notes, r2_key, filename, content_type, size) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(title, serviceDate, notes, r2Key, filename, contentType, size)
+    .run();
+}
+
+export async function deletePowerpointRecord(db: D1Database, powerpointId: number): Promise<void> {
+  await db.prepare("DELETE FROM powerpoints WHERE id = ?").bind(powerpointId).run();
+}
+
+// ===========================================================================
+// Daily readings (one row per date)
+// ===========================================================================
+
+export async function getReadingsForDate(db: D1Database, date: string): Promise<ReadingsRow | null> {
+  return await db.prepare("SELECT * FROM daily_readings WHERE reading_date = ?").bind(date).first<ReadingsRow>();
+}
+
+/** The readings already entered, from a date onwards (for the admin list). */
+export async function getReadingsFrom(db: D1Database, fromDate: string): Promise<ReadingsRow[]> {
+  const result = await db
+    .prepare("SELECT * FROM daily_readings WHERE reading_date >= ? ORDER BY reading_date")
+    .bind(fromDate)
+    .all<ReadingsRow>();
+  return result.results;
+}
+
+/** Saves the readings for a date, replacing any already saved for that date. */
+export async function saveReadings(db: D1Database, readings: ReadingsRow): Promise<void> {
+  await db
+    .prepare(
+      `INSERT OR REPLACE INTO daily_readings
+         (reading_date, day_name, lectionary_number,
+          first_reading, first_reading_text,
+          psalm, psalm_text,
+          second_reading, second_reading_text,
+          alleluia, alleluia_text,
+          gospel, gospel_text,
+          notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      readings.reading_date,
+      readings.day_name,
+      readings.lectionary_number,
+      readings.first_reading,
+      readings.first_reading_text,
+      readings.psalm,
+      readings.psalm_text,
+      readings.second_reading,
+      readings.second_reading_text,
+      readings.alleluia,
+      readings.alleluia_text,
+      readings.gospel,
+      readings.gospel_text,
+      readings.notes,
+    )
+    .run();
+}
+
+export async function deleteReadings(db: D1Database, date: string): Promise<void> {
+  await db.prepare("DELETE FROM daily_readings WHERE reading_date = ?").bind(date).run();
+}
+
+// ===========================================================================
+// Users (the tables themselves are managed by Better Auth)
+// ===========================================================================
+
+export type UserListRow = {
+  id: string;
+  name: string;
+  email: string;
+  role: string | null;
+};
+
+export async function countUsers(db: D1Database): Promise<number> {
+  const row = await db.prepare('SELECT COUNT(*) AS total FROM "user"').first<{ total: number }>();
+  return row?.total ?? 0;
+}
+
+export async function getAllUsers(db: D1Database): Promise<UserListRow[]> {
+  const result = await db
+    .prepare('SELECT id, name, email, role FROM "user" ORDER BY name COLLATE NOCASE')
+    .all<UserListRow>();
+  return result.results;
+}
+
+// ---------------------------------------------------------------------------
+// Storage used
+// ---------------------------------------------------------------------------
+
+/** How many bytes all uploaded files (songs and PowerPoints) take up in R2. */
+export async function getStorageUsed(db: D1Database): Promise<number> {
+  const songFiles = await db.prepare("SELECT COALESCE(SUM(size), 0) AS total FROM song_files").first<{ total: number }>();
+  const powerpoints = await db.prepare("SELECT COALESCE(SUM(size), 0) AS total FROM powerpoints").first<{ total: number }>();
+  return (songFiles?.total ?? 0) + (powerpoints?.total ?? 0);
+}
