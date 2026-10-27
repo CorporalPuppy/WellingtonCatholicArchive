@@ -382,6 +382,21 @@ Python's built-in libraries.
    can be filtered by tag. A song list made before tags existed gets an
    empty `tags` column on the next scan. Tags can also be set on a song's
    admin page.
+
+   To have tags suggested, scan with `--suggest-tags`. Each song on the
+   list is looked up on hymnary.org, which records how hymnals file it
+   (Mary, Easter, Communion...). Answers are kept in `hymnary_cache.json`,
+   so each song is looked up once, with a 3 second pause between requests
+   (the first run takes about 45 minutes for 450 songs and can be stopped
+   with Ctrl+C and carried on later). Suggestions go in
+   `tag_suggestions.csv`: put `yes` in its `approve` column for the ones
+   you want (edit the tags first if you like), or `no` to turn one down.
+   `upload` adds approved tags to the song's tags on the site, and
+   `song_list.csv` isn't changed. Modern worship songs usually aren't on
+   hymnary.org, and it has no style tags (pop, rock), so those stay yours
+   to add. The words that map hymnal subjects to tags are in `TAG_WORDS`
+   at the top of that part of the script. Delete `hymnary_cache.json` to
+   look everything up again.
 4. Scan again. Now every file is checked against your song list, and any
    file that doesn't match a song on it is marked `check`. New songs later
    just need a row in the list.
