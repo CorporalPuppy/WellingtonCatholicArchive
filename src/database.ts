@@ -329,13 +329,14 @@ export type NewSongFile = {
   contentType: string;
   size: number;
   sourcePath: string; // "" when uploaded on the website
+  sourceHash: string; // "" when uploaded on the website
 };
 
 export async function addSongFile(db: D1Database, file: NewSongFile): Promise<void> {
   await db
     .prepare(
-      `INSERT INTO song_files (song_id, kind, music_key, version, r2_key, filename, content_type, size, source_path)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO song_files (song_id, kind, music_key, version, r2_key, filename, content_type, size, source_path, source_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       file.songId,
@@ -347,7 +348,31 @@ export async function addSongFile(db: D1Database, file: NewSongFile): Promise<vo
       file.contentType,
       file.size,
       file.sourcePath,
+      file.sourceHash,
     )
+    .run();
+}
+
+/**
+ * Points an existing song file at a new copy in R2, e.g. after the file
+ * was edited. Its kind, key and version stay the same.
+ */
+export async function replaceSongFileContents(
+  db: D1Database,
+  fileId: number,
+  r2Key: string,
+  filename: string,
+  contentType: string,
+  size: number,
+  sourceHash: string,
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE song_files
+       SET r2_key = ?, filename = ?, content_type = ?, size = ?, source_hash = ?, uploaded_at = datetime('now')
+       WHERE id = ?`,
+    )
+    .bind(r2Key, filename, contentType, size, sourceHash, fileId)
     .run();
 }
 
@@ -356,17 +381,17 @@ export async function findSongByTitle(db: D1Database, title: string): Promise<So
   return await db.prepare("SELECT * FROM songs WHERE title = ? COLLATE NOCASE").bind(title).first<SongRow>();
 }
 
-/** Every source_path the bulk import has already uploaded. */
-export async function getImportedSourcePaths(db: D1Database): Promise<string[]> {
+/** Every file the bulk import has already uploaded, with its fingerprint. */
+export async function getImportedFiles(db: D1Database): Promise<{ source_path: string; source_hash: string }[]> {
   const result = await db
-    .prepare("SELECT source_path FROM song_files WHERE source_path != ''")
-    .all<{ source_path: string }>();
-  return result.results.map((row) => row.source_path);
+    .prepare("SELECT source_path, source_hash FROM song_files WHERE source_path != ''")
+    .all<{ source_path: string; source_hash: string }>();
+  return result.results;
 }
 
-export async function isSourcePathImported(db: D1Database, sourcePath: string): Promise<boolean> {
-  const row = await db.prepare("SELECT id FROM song_files WHERE source_path = ?").bind(sourcePath).first();
-  return row !== null;
+/** The song file the bulk import made from this file on your computer, if any. */
+export async function getSongFileBySourcePath(db: D1Database, sourcePath: string): Promise<SongFileRow | null> {
+  return await db.prepare("SELECT * FROM song_files WHERE source_path = ?").bind(sourcePath).first<SongFileRow>();
 }
 
 export async function deleteSongFileRecord(db: D1Database, fileId: number): Promise<void> {

@@ -64,6 +64,7 @@ export type SongFileRow = {
   content_type: string;
   size: number;
   source_path: string; // where the bulk import found it ("" = uploaded on the website)
+  source_hash: string; // fingerprint of the imported file, to spot edits ("" = not known)
   uploaded_at: string;
 };
 

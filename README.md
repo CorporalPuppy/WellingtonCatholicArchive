@@ -97,7 +97,8 @@ choir-site/
 │   ├── 0002_choir.sql      parishes, events, songs, files, rosters, set lists
 │   ├── 0003_powerpoints_and_readings.sql
 │   ├── 0004_musescore_files.sql   adds MuseScore as a kind of song file
-│   └── 0005_song_file_labels.sql  adds lyrics, slides, and a key and version per file
+│   ├── 0005_song_file_labels.sql  adds lyrics, slides, and a key and version per file
+│   └── 0006_song_file_fingerprint.sql  lets the import spot edited files
 │
 ├── tools/
 │   └── import_music.py     bulk import of your music folders (see "Importing your music library")
@@ -361,7 +362,25 @@ libraries.
    It asks for the import code. Songs that don't exist yet are created.
 
 Running either step again is safe: `scan` keeps what you changed in the
-spreadsheet, and `upload` skips files the site already has. If you don't
+spreadsheet, and `upload` skips files the site already has. If you've
+edited a file on your computer since it was uploaded, `upload` replaces the
+site's copy with the new one (it compares a "fingerprint" of each file's
+contents). So to update the site after changing your music, just run
+`scan` and `upload` again.
+
+To change a single file by hand, use **Replace** under that file on the
+song's admin page. It keeps the file's kind, key and version. Your music
+folder is the master copy, though: if that file came from the import, the
+next `upload` puts your computer's copy back, so edit it there too.
+
+The import is built to stay inside Cloudflare's free plan. Unchanged
+files are never sent again (the script compares fingerprints on your
+computer first). A replaced file's old copy is deleted from R2 straight
+away, so storage doesn't pile up. Each file is one small request. A full
+import of about 1,000 files uses around 1,000 of the 100,000 Worker
+requests allowed per day, and 1,000 of the million R2 writes allowed per
+month. Keep an eye on R2's 10 GB storage limit if you add lots of
+recordings, since audio is much bigger than sheet music. If you don't
 want the import switched on, delete the secret afterwards with
 `npx wrangler secret delete IMPORT_TOKEN`.
 
