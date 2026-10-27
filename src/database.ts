@@ -244,8 +244,8 @@ export async function getSongs(db: D1Database, search: string, section: "" | "mu
   }
   if (search !== "") {
     const pattern = "%" + search + "%";
-    sql = sql + " AND (title LIKE ? OR author LIKE ?)";
-    values.push(pattern, pattern);
+    sql = sql + " AND (title LIKE ? OR author LIKE ? OR tags LIKE ?)";
+    values.push(pattern, pattern, pattern);
   }
   sql = sql + " ORDER BY title COLLATE NOCASE";
   const result = await db.prepare(sql).bind(...values).all<SongRow>();
@@ -287,6 +287,17 @@ export async function updateSong(db: D1Database, songId: number, song: SongDetai
     )
     .bind(song.title, song.author, song.songKey, song.ccliNumber, song.notes, song.youtubeUrl, song.sheetMusicUrl, song.section, songId)
     .run();
+}
+
+/** Sets a song's tags (already tidied with tidyTags). */
+export async function setSongTags(db: D1Database, songId: number, tags: string): Promise<void> {
+  await db.prepare("UPDATE songs SET tags = ? WHERE id = ?").bind(tags, songId).run();
+}
+
+/** Every song's title and tags, for the bulk import to compare with song_list.csv. */
+export async function getAllSongTags(db: D1Database): Promise<{ title: string; tags: string }[]> {
+  const result = await db.prepare("SELECT title, tags FROM songs ORDER BY title COLLATE NOCASE").all<{ title: string; tags: string }>();
+  return result.results;
 }
 
 /** Moves a song to the music library or to Prayers and services. */

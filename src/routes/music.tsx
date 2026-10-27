@@ -13,7 +13,7 @@
 
 import { Hono } from "hono";
 import { getSong, getSongFile, getSongFiles, getSongs } from "../database";
-import { canSeeMemberPages, describeFileLabels, formatFileSize, isAlwaysPublicKind } from "../helpers";
+import { canSeeMemberPages, describeFileLabels, formatFileSize, isAlwaysPublicKind, splitTags } from "../helpers";
 import { sendFileFromStorage } from "../files";
 import { requireMemberAccess } from "../middleware";
 import { renderPage } from "../pages/render";
@@ -31,6 +31,7 @@ routes.use("/prayers/*", requireMemberAccess);
 
 // ---------------------------------------------------------------------------
 // List of songs, with a search box: GET /music?search=amazing
+//   and a tag filter:                GET /music?tag=Marian
 // List of prayers and services:      GET /prayers?search=creed
 // ---------------------------------------------------------------------------
 routes.get("/music", async (c) => {
@@ -43,7 +44,11 @@ routes.get("/prayers", async (c) => {
 
 async function showSongList(c: Context<AppEnv>, section: "music" | "prayers") {
   const search = (c.req.query("search") ?? "").trim();
-  const songs = await getSongs(c.env.DB, search, section);
+  const tag = c.req.query("tag") ?? "";
+  const allSongs = await getSongs(c.env.DB, search, section);
+  // Every tag used in this section, for the tag menu.
+  const allTags = [...new Set(allSongs.flatMap((song) => splitTags(song.tags)))].sort((a, b) => a.localeCompare(b));
+  const songs = tag === "" ? allSongs : allSongs.filter((song) => splitTags(song.tags).includes(tag));
   const isPrayers = section === "prayers";
   const address = isPrayers ? "/prayers" : "/music";
 
@@ -60,7 +65,15 @@ async function showSongList(c: Context<AppEnv>, section: "music" | "prayers") {
         )}
       </p>
       <form method="get" action={address} class="search">
-        <input type="search" name="search" value={search} placeholder={isPrayers ? "Search by name" : "Search by title or author"} />
+        <input type="search" name="search" value={search} placeholder={isPrayers ? "Search by name or tag" : "Search by title, author or tag"} />
+        {allTags.length > 0 && (
+          <select name="tag" aria-label="Tag" onchange="this.form.submit()" class="tag-filter">
+            <option value="">Any tag</option>
+            {allTags.map((each) => (
+              <option value={each} selected={tag === each}>{each}</option>
+            ))}
+          </select>
+        )}
         <button type="submit">Search</button>
       </form>
 
@@ -72,6 +85,7 @@ async function showSongList(c: Context<AppEnv>, section: "music" | "prayers") {
             <a href={address + "/" + song.id} class="song-card">
               <strong>{song.title}</strong>
               {song.author !== "" && <span class="muted">{song.author}</span>}
+              {song.tags !== "" && <span class="song-tags">{splitTags(song.tags).join(" · ")}</span>}
               <span class="song-card-key">{song.song_key !== "" && "Key " + song.song_key}</span>
             </a>
           </li>

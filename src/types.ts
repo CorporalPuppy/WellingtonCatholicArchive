@@ -52,6 +52,7 @@ export type SongRow = {
   youtube_url: string;
   sheet_music_url: string;
   section: "music" | "prayers"; // "prayers" = Prayers and services
+  tags: string; // e.g. "Marian, Easter" ("" = none)
 };
 
 export type SongFileRow = {

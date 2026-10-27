@@ -163,6 +163,28 @@ export function liturgicalSeason(date: string): Season {
   return "Ordinary Time";
 }
 
+/**
+ * Tags as typed ("marian;Easter , easter") made tidy: each starting with a
+ * capital, one comma and space between them, no repeats, nothing empty.
+ * "Marian, Easter". Keep in step with tidy_tags in tools/import_music.py.
+ */
+export function tidyTags(text: string): string {
+  const tags: string[] = [];
+  for (const tag of text.split(/[,;]/)) {
+    let tidy = tag.trim().replace(/\s+/g, " ");
+    tidy = tidy.charAt(0).toUpperCase() + tidy.slice(1); // "marian" becomes "Marian"
+    if (tidy !== "" && !tags.some((each) => each.toLowerCase() === tidy.toLowerCase())) {
+      tags.push(tidy);
+    }
+  }
+  return tags.join(", ");
+}
+
+/** The tags of a song as a list: "Marian, Easter" gives ["Marian", "Easter"]. */
+export function splitTags(tags: string): string[] {
+  return tags === "" ? [] : tags.split(", ");
+}
+
 /** True if the text looks like a date, "YYYY-MM-DD". */
 export function isValidDate(text: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(text);

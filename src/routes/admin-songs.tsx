@@ -28,6 +28,7 @@ import {
   getSongsWithNoFiles,
   getStorageUsed,
   replaceSongFileContents,
+  setSongTags,
   updateSong,
   type SongDetails,
 } from "../database";
@@ -41,6 +42,7 @@ import {
   guessFileKind,
   readSongSection,
   songPageLink,
+  tidyTags,
   workOutContentType,
   wouldGoOverFreeStorage,
 } from "../helpers";
@@ -90,6 +92,10 @@ function SongForm(props: { action: string; song?: SongRow; section?: string; but
       <label>
         Key
         <input type="text" name="songKey" value={song?.song_key ?? ""} placeholder="e.g. G" />
+      </label>
+      <label>
+        Tags (optional, with commas between them)
+        <input type="text" name="tags" value={song?.tags ?? ""} placeholder="e.g. Marian, Easter, Communion" />
       </label>
       <label>
         CCLI or licence number (optional)
@@ -233,6 +239,7 @@ routes.get("/admin/songs/new", (c) => {
 routes.post("/admin/songs/new", async (c) => {
   const form = await c.req.parseBody();
   const newId = await createSong(c.env.DB, readSongForm(form));
+  await setSongTags(c.env.DB, newId, tidyTags(getFormText(form, "tags")));
   // Go to the edit page so the admin can upload files straight away.
   return c.redirect("/admin/songs/" + newId + "?saved=1");
 });
@@ -339,6 +346,7 @@ routes.post("/admin/songs/:id", async (c) => {
   const songId = Number(c.req.param("id"));
   const form = await c.req.parseBody();
   await updateSong(c.env.DB, songId, readSongForm(form));
+  await setSongTags(c.env.DB, songId, tidyTags(getFormText(form, "tags")));
   return c.redirect("/admin/songs/" + songId + "?saved=1");
 });
 

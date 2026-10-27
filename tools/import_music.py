@@ -20,6 +20,8 @@ It works in steps, so nothing is uploaded until you've checked it:
      and delete the other row. The note column points out likely ones.
      Save, then run scan again. Every file is now checked against your
      list, and any file that doesn't match a song on it is marked "check".
+     The tags column takes tags for the song, with commas between them
+     (e.g. Marian, Easter). The site's Music page can be filtered by them.
 
   3. UPLOAD: open import_plan.csv in Excel, fix anything marked "check",
      save it, then upload every row marked "ok".
@@ -69,7 +71,7 @@ SONG_LIST_FILE = "song_list.csv"
 BIGGEST_FILE_BYTES = 95_000_000
 
 COLUMNS = ["status", "song_title", "kind", "key", "version", "found_in", "note", "file"]
-SONG_LIST_COLUMNS = ["title", "other_spellings", "found_in", "note"]
+SONG_LIST_COLUMNS = ["title", "other_spellings", "tags", "found_in", "note"]
 
 # ---------------------------------------------------------------------------
 # Your folders. Each folder name (the first folder under the music folder)
@@ -421,6 +423,50 @@ def check_against_song_list(rows, songs):
                 row["note"] += "; " + hint
 
 
+def tidy_tags(text):
+    """
+    Tags as typed ("marian;Easter , easter") made tidy: "Marian, Easter".
+    Keep in step with tidyTags in src/helpers.ts.
+    """
+    tags = []
+    for tag in re.split(r"[,;]", text or ""):
+        tag = re.sub(r"\s+", " ", tag).strip()
+        tag = tag[:1].upper() + tag[1:]  # "marian" becomes "Marian"
+        if tag and tag.lower() not in (each.lower() for each in tags):
+            tags.append(tag)
+    return ", ".join(tags)
+
+
+def read_song_tags(list_path):
+    """Each song's tags from the tags column of song_list.csv: {title: "Marian, Easter"}."""
+    if not os.path.exists(list_path):
+        return {}
+    return {
+        (song.get("title") or "").strip(): tidy_tags(song.get("tags"))
+        for song in read_csv(list_path)
+        if (song.get("title") or "").strip() != ""
+    }
+
+
+def add_tags_column(list_path):
+    """
+    Adds an empty tags column to a song_list.csv made before tags existed.
+    Nothing else in the file is changed.
+    """
+    songs = read_csv(list_path)
+    if not songs or "tags" in songs[0]:
+        return
+    columns = list(songs[0].keys())
+    columns.insert(columns.index("other_spellings") + 1 if "other_spellings" in columns else len(columns), "tags")
+    with open(list_path, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=columns)
+        writer.writeheader()
+        for song in songs:
+            song["tags"] = ""
+            writer.writerow(song)
+    print("Added a tags column to", list_path, "(e.g. Marian, Easter, Communion).")
+
+
 def write_first_song_list(rows, list_path):
     """
     Makes song_list.csv from the files the first time you scan: one row per
@@ -451,6 +497,7 @@ def write_first_song_list(rows, list_path):
             writer.writerow({
                 "title": title,
                 "other_spellings": "; ".join(sorted(song["spellings"])),
+                "tags": "",
                 "found_in": song["found_in"],
                 "note": "; ".join(notes),
             })
@@ -527,7 +574,7 @@ def print_total_size(rows):
 # Step 2: upload
 # ---------------------------------------------------------------------------
 
-def upload(plan_path, site, token):
+def upload(plan_path, site, token, songs_path):
     """
     Makes the site match your music folders:
       - new files are uploaded
@@ -537,6 +584,7 @@ def upload(plan_path, site, token):
       - a changed song title, kind, key or version is updated
       - files gone from your folders (or marked "skip") are removed from
         the site, after you say yes
+      - tags in song_list.csv are set on their songs
     Rows still marked "check" are left alone.
     """
     rows = read_plan(plan_path)
@@ -626,12 +674,41 @@ def upload(plan_path, site, token):
         else:
             print("  Kept them. They'll be listed again next time.")
 
+    failed += send_tags(site, token, songs_path)
+
     if failed:
         print("Done, but", failed, "failed.")
         print("Run the upload again to retry the failed ones.")
     else:
         print("Done.")
     print("Songs left with no files show under 'Resolve now' on the site's admin songs page.")
+
+
+def send_tags(site, token, songs_path):
+    """
+    Sends the tags in song_list.csv for songs whose tags on the site are
+    different. Songs already on the site get them too; no files are sent.
+    Returns how many failed.
+    """
+    wanted = read_song_tags(songs_path)
+    on_site = {}
+    for line in ask_site(site, token, "GET", "/api/import/song-tags").splitlines():
+        title, _, tags = line.partition("\t")
+        on_site[title.strip().lower()] = tags
+    failed = changed = 0
+    for title, tags in wanted.items():
+        site_tags = on_site.get(title.lower())
+        if site_tags is None or site_tags == tags:
+            continue  # not on the site yet, or nothing to change
+        try:
+            ask_site(site, token, "POST", "/api/import/song-tags?" + urllib.parse.urlencode({"title": title, "tags": tags}))
+            changed += 1
+        except RuntimeError as error:
+            print("  FAILED to set the tags of", title, "-", error)
+            failed += 1
+    if changed:
+        print("  New tags on", changed, "songs.")
+    return failed
 
 
 def file_fingerprint(path):
@@ -739,6 +816,7 @@ def main():
     upload_step = steps.add_parser("upload", help="upload every row marked ok")
     upload_step.add_argument("--site", required=True, help="e.g. https://ourchoir.nz")
     upload_step.add_argument("--plan", default=PLAN_FILE)
+    upload_step.add_argument("--songs", default=SONG_LIST_FILE, help="your song list (for its tags column)")
 
     args = parser.parse_args()
 
@@ -749,6 +827,7 @@ def main():
             count = write_first_song_list(rows, args.songs)
             songs = {}
         else:
+            add_tags_column(args.songs)
             songs = read_song_list(args.songs)
             check_against_song_list(rows, songs)
         rows = keep_earlier_edits(rows, args.plan, songs)
@@ -771,7 +850,7 @@ def main():
             print('Open', args.plan, 'in Excel, sort out the "check" rows, save, then run "upload".')
     else:
         token = os.environ.get("IMPORT_TOKEN") or getpass.getpass("Import token: ")
-        upload(args.plan, args.site, token)
+        upload(args.plan, args.site, token, args.songs)
 
 
 if __name__ == "__main__":

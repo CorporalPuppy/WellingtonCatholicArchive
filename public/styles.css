@@ -324,7 +324,7 @@ h3 { font-size: 1.1rem; }
 .song-card:hover { text-decoration: none; }
 .song-card strong { font-size: 1.05rem; }
 .song-card .muted { grid-column: 1; font-size: 0.92rem; font-weight: 400; }
-.song-card-key { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 0.85rem; font-weight: 600; color: var(--accent); }
+.song-card-key { grid-column: 2; grid-row: 1 / span 3; align-self: center; font-size: 0.85rem; font-weight: 600; color: var(--accent); }
 
 /* Song and admin cards lift a little when you point at them */
 .song-list li, .admin-menu li { transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s; }
@@ -827,3 +827,7 @@ form.powerpoint-search .filters select { width: auto; flex: 1 1 150px; margin: 0
   border-radius: 3px;
   padding: 0 2px;
 }
+
+/* ---- Song tags ---- */
+.song-card .song-tags { grid-column: 1; font-size: 0.82rem; color: var(--accent); }
+form.search select.tag-filter { width: auto; flex: 0 1 180px; }

@@ -8,6 +8,9 @@
 //   POST /api/import/update      a file was renamed or moved, or its song,
 //                                kind, key or version changed: no upload needed
 //   POST /api/import/delete      a file was removed from your music folders
+//   GET  /api/import/song-tags   every song's title and tags, one per line
+//   POST /api/import/song-tags   ?title=&tags= sets a song's tags (from the
+//                                tags column of song_list.csv)
 //
 // And the same four for Sunday and service PowerPoints (used by
 // tools/import_slides.py). These go in the PowerPoint archive, under the
@@ -50,6 +53,7 @@ import {
   findSongByTitle,
   addImportedPowerpoint,
   getImportedFiles,
+  getAllSongTags,
   getImportedPowerpoints,
   getPowerpointBySourcePath,
   getSongFileBySourcePath,
@@ -59,11 +63,12 @@ import {
   replaceSongFileContents,
   updateImportedPowerpoint,
   setPowerpointWords,
+  setSongTags,
   setSongSection,
   updateImportedSongFile,
 } from "../database";
 import { makeStorageKey } from "../files";
-import { FILE_KIND_LABELS, readSongSection, workOutContentType, wouldGoOverFreeStorage } from "../helpers";
+import { FILE_KIND_LABELS, readSongSection, tidyTags, workOutContentType, wouldGoOverFreeStorage } from "../helpers";
 import type { AppEnv } from "../types";
 
 const routes = new Hono<AppEnv>();
@@ -248,6 +253,22 @@ routes.post("/api/import/song-file", async (c) => {
   });
 
   return c.text("added to song " + songId);
+});
+
+// Tags (e.g. "Marian, Easter") from the tags column of your song list.
+routes.get("/api/import/song-tags", async (c) => {
+  const songs = await getAllSongTags(c.env.DB);
+  return c.text(songs.map((song) => song.title + "\t" + song.tags).join("\n"));
+});
+
+routes.post("/api/import/song-tags", async (c) => {
+  const title = (c.req.query("title") ?? "").trim();
+  const song = title === "" ? null : await findSongByTitle(c.env.DB, title);
+  if (song === null) {
+    return c.text("No song called " + title, 404);
+  }
+  await setSongTags(c.env.DB, song.id, tidyTags(c.req.query("tags") ?? ""));
+  return c.text("tags saved");
 });
 
 // ---------------------------------------------------------------------------

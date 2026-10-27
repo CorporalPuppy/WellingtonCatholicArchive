@@ -377,6 +377,11 @@ Python's built-in libraries.
    "Let My Tongue Be Silenced"), keep one, add the other spelling to it and
    delete the other row. `found_in` shows which kinds of file each song
    has (just for your information: a song with only chords is fine). The script never changes this file again, so your fixes stick.
+   The `tags` column takes tags for each song, with commas between them
+   (e.g. `Marian, Easter, Communion`). They show on the Music page, which
+   can be filtered by tag. A song list made before tags existed gets an
+   empty `tags` column on the next scan. Tags can also be set on a song's
+   admin page.
 4. Scan again. Now every file is checked against your song list, and any
    file that doesn't match a song on it is marked `check`. New songs later
    just need a row in the list.
@@ -405,6 +410,8 @@ Running either step again is safe. After any change to your music, just run
   file's contents)
 - renamed or moved files are moved on the site without being sent again
 - a changed song title, key or version (in either spreadsheet) is updated
+- tags from `song_list.csv` are set on their songs, including songs uploaded
+  before (no files are sent again for that)
 - files gone from your folders, or marked `skip`, are listed, and removed
   from the site once you type `yes`
 
