@@ -23,8 +23,10 @@ The status column:
   skip   never uploaded (autosaves, backups, shortcuts, videos...)
 
 Running "upload" again is safe: the site remembers every file it already
-has and skips it. Running "scan" again keeps the changes you made to rows
-in an existing import_plan.csv, and adds any new files.
+has and skips it. If you've edited a file since (a new chord chart, a
+fixed typo in the slides), the site's copy is replaced with the new one.
+Running "scan" again keeps the changes you made to rows in an existing
+import_plan.csv, and adds any new files.
 
 Only Python's built-in libraries are used, so there is nothing to install.
 """
@@ -33,6 +35,7 @@ import argparse
 import csv
 import difflib
 import getpass
+import hashlib
 import os
 import re
 import sys
@@ -351,19 +354,30 @@ def read_plan(plan_path):
 def upload(plan_path, site, token):
     rows = read_plan(plan_path)
     to_upload = [row for row in rows if row["status"].strip().lower() == "ok"]
-    already_done = set(ask_site(site, token, "GET", "/api/import/done").splitlines())
 
-    print(len(to_upload), "rows marked ok,", len(already_done), "files already on the site.")
+    # What the site already has: each file's path and its fingerprint.
+    on_site = {}
+    for line in ask_site(site, token, "GET", "/api/import/done").splitlines():
+        if "\t" in line:
+            fingerprint, path = line.split("\t", 1)
+            on_site[path] = fingerprint
+
+    print(len(to_upload), "rows marked ok,", len(on_site), "files already on the site.")
     uploaded = 0
+    replaced = 0
     failed = 0
     for number, row in enumerate(to_upload, start=1):
         path = row["file"]
-        if path in already_done:
-            continue
         if not os.path.exists(path):
             print("  MISSING", path)
             failed += 1
             continue
+
+        with open(path, "rb") as f:
+            data = f.read()
+        fingerprint = hashlib.sha256(data).hexdigest()
+        if on_site.get(path) == fingerprint:
+            continue  # on the site already, and not edited since
 
         details = {
             "title": row["song_title"].strip(),
@@ -372,18 +386,20 @@ def upload(plan_path, site, token):
             "version": row["version"].strip(),
             "filename": os.path.basename(path),
             "source": path,
+            "hash": fingerprint,
         }
-        with open(path, "rb") as f:
-            data = f.read()
         try:
             answer = ask_site(site, token, "POST", "/api/import/song-file?" + urllib.parse.urlencode(details), data)
             print("  [" + str(number) + "/" + str(len(to_upload)) + "]", details["title"], "-", details["filename"], "-", answer)
-            uploaded += 1
+            if path in on_site:
+                replaced += 1
+            else:
+                uploaded += 1
         except RuntimeError as error:
             print("  FAILED", path, "-", error)
             failed += 1
 
-    print("Done.", uploaded, "uploaded,", failed, "failed.")
+    print("Done.", uploaded, "new,", replaced, "replaced (edited since last time),", failed, "failed.")
     if failed:
         print("Run the upload again to retry the failed ones.")
 

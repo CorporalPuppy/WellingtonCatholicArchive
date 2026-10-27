@@ -741,6 +741,10 @@ details.file-section[open] > summary::before { transform: rotate(45deg); }
   color: var(--accent);
   background: var(--accent-soft);
 }
+/* The "Replace" box under each file on a song's admin page. */
+details.replace-file { margin-top: 4px; font-size: 0.9rem; }
+details.replace-file summary { cursor: pointer; color: var(--accent); }
+details.replace-file form { margin-top: 6px; }
 details.file-section > p { margin: 12px 4px 0; }
 details.file-section > .file-list { margin: 10px 0 0 16px; }  /* indent files under their heading */
 

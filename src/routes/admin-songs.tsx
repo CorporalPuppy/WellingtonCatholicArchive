@@ -8,6 +8,7 @@
 //   POST /admin/songs/:id                   save changes to the song
 //   POST /admin/songs/:id/delete            delete the song and its files
 //   POST /admin/songs/:id/files             upload a file
+//   POST /admin/songs/:id/files/:fileId/replace   upload a new copy of a file
 //   POST /admin/songs/:id/files/:fileId/delete
 //
 // Uploaded files go into R2. We also save a row in the song_files table
@@ -24,6 +25,7 @@ import {
   getSongFile,
   getSongFiles,
   getSongs,
+  replaceSongFileContents,
   updateSong,
   type SongDetails,
 } from "../database";
@@ -183,6 +185,14 @@ routes.get("/admin/songs/:id", async (c) => {
               <form method="post" action={base + "/files/" + file.id + "/delete"} class="inline">
                 <button type="submit" class="link-button">Delete</button>
               </form>
+              {/* Swap in an edited copy. It keeps its kind, key and version. */}
+              <details class="replace-file">
+                <summary>Replace</summary>
+                <form method="post" action={base + "/files/" + file.id + "/replace"} enctype="multipart/form-data" class="row">
+                  <input type="file" name="file" required />
+                  <button type="submit">Upload new copy</button>
+                </form>
+              </details>
             </li>
           ))}
         </ul>
@@ -297,8 +307,36 @@ routes.post("/admin/songs/:id/files", async (c) => {
       contentType: contentType,
       size: uploaded.size,
       sourcePath: "",
+      sourceHash: "",
     });
   }
+
+  return c.redirect("/admin/songs/" + songId + "?saved=1");
+});
+
+// ---------------------------------------------------------------------------
+// Replacing a file with an edited copy
+// ---------------------------------------------------------------------------
+routes.post("/admin/songs/:id/files/:fileId/replace", async (c) => {
+  const songId = Number(c.req.param("id"));
+  const fileId = Number(c.req.param("fileId"));
+  const file = await getSongFile(c.env.DB, fileId);
+  const form = await c.req.parseBody();
+  const uploaded = form["file"];
+  if (file === null || file.song_id !== songId || !(uploaded instanceof File) || uploaded.size === 0) {
+    return c.redirect("/admin/songs/" + songId);
+  }
+
+  const data = await uploaded.arrayBuffer();
+  const contentType = workOutContentType(uploaded.name, uploaded.type);
+  const newR2Key = makeStorageKey("songs/" + songId, uploaded.name);
+  await c.env.MUSIC.put(newR2Key, data, { httpMetadata: { contentType: contentType } });
+
+  // The fingerprint is cleared (""), so if this file came from the bulk
+  // import, the next import run sends your computer's copy once more. Your
+  // music folder stays the master copy.
+  await replaceSongFileContents(c.env.DB, fileId, newR2Key, uploaded.name, contentType, data.byteLength, "");
+  await c.env.MUSIC.delete(file.r2_key);
 
   return c.redirect("/admin/songs/" + songId + "?saved=1");
 });
