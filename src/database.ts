@@ -252,6 +252,24 @@ export async function getSongs(db: D1Database, search: string, section: "" | "mu
   return result.results;
 }
 
+/**
+ * How many files of each kind every song has, e.g. song 4 has 2 "sheet"
+ * and 1 "recording". Used for the labels on the music library's cards and
+ * its "Sheet music / Chord charts / ..." filters. One query for all songs.
+ */
+export async function getSongFileKinds(db: D1Database): Promise<Map<number, Record<string, number>>> {
+  const result = await db
+    .prepare("SELECT song_id, kind, COUNT(*) AS how_many FROM song_files GROUP BY song_id, kind")
+    .all<{ song_id: number; kind: string; how_many: number }>();
+  const kinds = new Map<number, Record<string, number>>();
+  for (const row of result.results) {
+    const counts = kinds.get(row.song_id) ?? {};
+    counts[row.kind] = row.how_many;
+    kinds.set(row.song_id, counts);
+  }
+  return kinds;
+}
+
 export async function getSong(db: D1Database, songId: number): Promise<SongRow | null> {
   return await db.prepare("SELECT * FROM songs WHERE id = ?").bind(songId).first<SongRow>();
 }
