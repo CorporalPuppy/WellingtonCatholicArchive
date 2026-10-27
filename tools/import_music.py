@@ -577,6 +577,7 @@ def upload(plan_path, site, token):
 def ask_site(site, token, method, address, data=None):
     request = urllib.request.Request(site.rstrip("/") + address, data=data, method=method)
     request.add_header("Authorization", "Bearer " + token)
+    request.add_header("User-Agent", "choir-music-import/1.0")
     if data is not None:
         request.add_header("Content-Type", "application/octet-stream")
     try:
