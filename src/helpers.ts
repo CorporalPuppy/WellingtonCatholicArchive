@@ -307,9 +307,11 @@ export function cleanWebLink(link: string): string {
 /**
  * After logging in we send people back to the page they wanted.
  * This makes sure that page is on our own site (not some other website).
+ * Browsers read "/\evil.com" like "//evil.com", and skip tabs and line
+ * breaks in addresses, so paths with backslashes or those are refused too.
  */
 export function safeRedirectPath(path: string | undefined): string {
-  if (path && path.startsWith("/") && !path.startsWith("//")) {
+  if (path && path.startsWith("/") && !path.startsWith("//") && !/[\\\x00-\x1f]/.test(path)) {
     return path;
   }
   return "/";
