@@ -455,6 +455,22 @@ files replace the site's copy, moved ones are moved, a new title or date is
 updated, and removed ones are taken off once you type `yes`. A new year's
 folder just needs to be called `Year B - 2027` and so on.
 
+`upload` also sends the words on each deck's slides (song titles, lyrics,
+readings), and the `church` column is filled in from the name (the list
+is `CHURCHES` at the top of the script). On the PowerPoints page:
+
+- the **search** finds words in titles and on the slides, in any order,
+  best match first, with the matching words highlighted. "teresas" finds
+  "St Teresa's" and "maori" finds "Māori". Old `.ppt` files are found by
+  title only, since their words can't be read without extra software.
+- **filters** narrow it to Year A, B or C, a season (worked out from the
+  date) and a church.
+
+The search uses SQLite's built-in full-text search (FTS5). One catch:
+`wrangler d1 export` can't export a database with a search index in it.
+To back up, drop the index first and put it back afterwards (see
+`migrations/0009_powerpoint_search.sql`).
+
 PowerPoints you use again and again, like the Holy Rosary or the Stations
 of the Cross, belong on the Prayers and services page instead: put them in
 the music library's prayers folder and import them with `import_music.py`.

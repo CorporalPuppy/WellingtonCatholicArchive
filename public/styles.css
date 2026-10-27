@@ -807,3 +807,23 @@ details.preview img { max-width: 100%; margin-top: 10px; border-radius: 10px; }
 .storage-meter .muted { font-size: 0.88rem; }
 .storage-bar { height: 8px; margin: 10px 0; border-radius: 999px; background: var(--accent-soft); overflow: hidden; }
 .storage-bar-fill { height: 100%; border-radius: 999px; background: var(--accent); }
+
+/* ---- PowerPoints: search box and filters ---- */
+form.powerpoint-search { margin-bottom: 20px; }
+form.powerpoint-search .search { display: flex; gap: 8px; }
+form.powerpoint-search .search input { margin: 0; }
+form.powerpoint-search .filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+form.powerpoint-search .filters select { width: auto; flex: 1 1 150px; margin: 0; }
+.search-snippet { margin: 8px 0 0; font-size: 0.92rem; color: var(--muted); }
+.search-snippet mark {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--text);
+  border-radius: 3px;
+  padding: 0 2px;
+}

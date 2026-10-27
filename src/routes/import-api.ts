@@ -13,10 +13,13 @@
 // tools/import_slides.py). These go in the PowerPoint archive, under the
 // date they were used, so they show on that day's events:
 //
-//   GET  /api/import/slides/done     fingerprint, path, title and date
-//   POST /api/import/slides/file     ?title=&date=&filename=&source=&hash=
-//   POST /api/import/slides/update   ?source=&new_source=&title=&date=&filename=
+//   GET  /api/import/slides/done     fingerprint, path, title, date, church
+//                                    and the fingerprint of its words
+//   POST /api/import/slides/file     ?title=&date=&church=&filename=&source=&hash=
+//   POST /api/import/slides/update   ?source=&new_source=&title=&date=&church=&filename=
 //   POST /api/import/slides/delete   ?source=
+//   POST /api/import/slides/words    ?source=&hash= with the words on its
+//                                    slides as the body, for searching
 //
 // These aren't pages for people. The import script sends the secret
 // IMPORT_TOKEN in an "Authorization: Bearer ..." header instead of logging
@@ -55,6 +58,7 @@ import {
   replacePowerpointContents,
   replaceSongFileContents,
   updateImportedPowerpoint,
+  setPowerpointWords,
   setSongSection,
   updateImportedSongFile,
 } from "../database";
@@ -259,7 +263,14 @@ function readDate(text: string | undefined): string {
 routes.get("/api/import/slides/done", async (c) => {
   const powerpoints = await getImportedPowerpoints(c.env.DB);
   const lines = powerpoints.map((powerpoint) =>
-    [powerpoint.source_hash, powerpoint.source_path, powerpoint.title, powerpoint.service_date].join("\t"),
+    [
+      powerpoint.source_hash,
+      powerpoint.source_path,
+      powerpoint.title,
+      powerpoint.service_date,
+      powerpoint.church,
+      powerpoint.text_hash,
+    ].join("\t"),
   );
   return c.text(lines.join("\n"));
 });
@@ -283,7 +294,8 @@ routes.post("/api/import/slides/update", async (c) => {
   if (newSource !== source && (await getPowerpointBySourcePath(c.env.DB, newSource)) !== null) {
     return c.text("Already on the site: " + newSource, 409);
   }
-  await updateImportedPowerpoint(c.env.DB, powerpoint.id, title, date, filename, newSource);
+  const church = (c.req.query("church") ?? "").trim();
+  await updateImportedPowerpoint(c.env.DB, powerpoint.id, title, date, church, filename, newSource);
   return c.text("updated");
 });
 
@@ -304,6 +316,7 @@ routes.post("/api/import/slides/file", async (c) => {
   const date = readDate(c.req.query("date"));
   const filename = (c.req.query("filename") ?? "").trim();
   const source = (c.req.query("source") ?? "").trim();
+  const church = (c.req.query("church") ?? "").trim();
   // Worked out by the script, as for song files above.
   let hash = (c.req.query("hash") ?? "").trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(hash)) {
@@ -337,7 +350,7 @@ routes.post("/api/import/slides/file", async (c) => {
   // Edited since last time: point it at the new copy, then remove the old one.
   if (existing !== null) {
     await replacePowerpointContents(c.env.DB, existing.id, r2Key, contentType, size, hash);
-    await updateImportedPowerpoint(c.env.DB, existing.id, title, date, filename, source);
+    await updateImportedPowerpoint(c.env.DB, existing.id, title, date, church, filename, source);
     await c.env.MUSIC.delete(existing.r2_key);
     return c.text("replaced the copy on the site");
   }
@@ -354,10 +367,31 @@ routes.post("/api/import/slides/file", async (c) => {
       contentType: contentType,
       size: size,
     },
+    church,
     source,
     hash,
   );
   return c.text("added");
+});
+
+// The words on a PowerPoint's slides, pulled out by the script on your
+// computer (reading a PowerPoint here would take more time than the free
+// plan gives each request). They're kept so the site's search finds them.
+routes.post("/api/import/slides/words", async (c) => {
+  const source = (c.req.query("source") ?? "").trim();
+  const hash = (c.req.query("hash") ?? "").trim().toLowerCase();
+  const powerpoint = source === "" ? null : await getPowerpointBySourcePath(c.env.DB, source);
+  if (powerpoint === null) {
+    return c.text("Not found: " + source, 404);
+  }
+  // At most about 100,000 letters (the script sends no more than that).
+  const size = Number(c.req.header("Content-Length") ?? "0");
+  if (size > 400_000) {
+    return c.text("Too many words.", 413);
+  }
+  const words = (await c.req.text()).slice(0, 100_000);
+  await setPowerpointWords(c.env.DB, powerpoint.id, words, /^[0-9a-f]{64}$/.test(hash) ? hash : "");
+  return c.text("words saved");
 });
 
 export default routes;

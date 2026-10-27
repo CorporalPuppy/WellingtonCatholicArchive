@@ -471,28 +471,69 @@ export async function deleteSongFileRecord(db: D1Database, fileId: number): Prom
 // ===========================================================================
 
 // Every PowerPoint query starts like this, so each one comes with the
-// title of the event it was made for (if any).
+// title of the event it was made for (if any). The words on the slides
+// (slide_text) are left out: they're only for searching, and can be long.
+const POWERPOINT_COLUMNS = `
+  powerpoints.id, powerpoints.title, powerpoints.service_date, powerpoints.notes, powerpoints.r2_key,
+  powerpoints.filename, powerpoints.content_type, powerpoints.size, powerpoints.uploaded_at,
+  powerpoints.event_id, powerpoints.source_path, powerpoints.source_hash, powerpoints.church,
+  powerpoints.text_hash, events.title AS event_title`;
 const SELECT_POWERPOINTS = `
-  SELECT powerpoints.*, events.title AS event_title
+  SELECT ${POWERPOINT_COLUMNS}
   FROM powerpoints
   LEFT JOIN events ON events.id = powerpoints.event_id`;
 
-/** All PowerPoints, newest service first, or only those matching a search. */
+/**
+ * All PowerPoints, newest service first. Or, with a search, those matching
+ * it, best match first: words in the title, church, notes or on the slides
+ * (in any order; the last word can be the start of a word), then any whose
+ * date or event matches. Search results come with a snippet: the words
+ * from the slides around the match, with the matching words between
+ * \u0001 and \u0002 so the page can highlight them.
+ */
 export async function getPowerpoints(db: D1Database, search: string): Promise<PowerpointRow[]> {
   if (search === "") {
     const result = await db.prepare(SELECT_POWERPOINTS + " ORDER BY powerpoints.service_date DESC, powerpoints.title").all<PowerpointRow>();
     return result.results;
   }
+
+  // Each word in quotes, so characters like - or * can't upset the search.
+  const words = search.match(/[\p{L}\p{N}]+/gu) ?? [];
+  let found: PowerpointRow[] = [];
+  if (words.length > 0) {
+    const query = words.map((word) => '"' + word + '"').join(" ") + "*";
+    const result = await db
+      .prepare(
+        `SELECT ${POWERPOINT_COLUMNS},
+           snippet(powerpoints_search, 3, char(1), char(2), '...', 16) AS snippet
+         FROM powerpoints_search
+         JOIN powerpoints ON powerpoints.id = powerpoints_search.rowid
+         LEFT JOIN events ON events.id = powerpoints.event_id
+         WHERE powerpoints_search MATCH ?
+         ORDER BY bm25(powerpoints_search, 10.0, 3.0, 2.0, 1.0)
+         LIMIT 200`,
+      )
+      .bind(query)
+      .all<PowerpointRow>();
+    found = result.results;
+  }
+
+  // A date ("2026-10") or an event's name.
   const pattern = "%" + search + "%";
-  const result = await db
-    .prepare(
-      SELECT_POWERPOINTS +
-        ` WHERE powerpoints.title LIKE ? OR powerpoints.notes LIKE ? OR powerpoints.service_date LIKE ? OR events.title LIKE ?
-          ORDER BY powerpoints.service_date DESC, powerpoints.title`,
-    )
-    .bind(pattern, pattern, pattern, pattern)
+  const byDateOrEvent = await db
+    .prepare(SELECT_POWERPOINTS + " WHERE powerpoints.service_date LIKE ? OR events.title LIKE ? ORDER BY powerpoints.service_date DESC")
+    .bind(pattern, pattern)
     .all<PowerpointRow>();
-  return result.results;
+  const alreadyFound = new Set(found.map((powerpoint) => powerpoint.id));
+  return found.concat(byDateOrEvent.results.filter((powerpoint) => !alreadyFound.has(powerpoint.id)));
+}
+
+/** Every church named on a PowerPoint, for the church filter. */
+export async function getPowerpointChurches(db: D1Database): Promise<string[]> {
+  const result = await db
+    .prepare("SELECT DISTINCT church FROM powerpoints WHERE church != '' ORDER BY church COLLATE NOCASE")
+    .all<{ church: string }>();
+  return result.results.map((row) => row.church);
 }
 
 /**
@@ -559,13 +600,14 @@ export async function getPowerpointBySourcePath(db: D1Database, sourcePath: stri
 export async function addImportedPowerpoint(
   db: D1Database,
   powerpoint: NewPowerpoint,
+  church: string,
   sourcePath: string,
   sourceHash: string,
 ): Promise<void> {
   await db
     .prepare(
-      `INSERT INTO powerpoints (title, service_date, notes, r2_key, filename, content_type, size, source_path, source_hash)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO powerpoints (title, service_date, notes, r2_key, filename, content_type, size, church, source_path, source_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       powerpoint.title,
@@ -575,6 +617,7 @@ export async function addImportedPowerpoint(
       powerpoint.filename,
       powerpoint.contentType,
       powerpoint.size,
+      church,
       sourcePath,
       sourceHash,
     )
@@ -600,19 +643,25 @@ export async function replacePowerpointContents(
     .run();
 }
 
-/** A new title, date, file name or place on your computer for an imported PowerPoint. */
+/** A new title, date, church, file name or place on your computer for an imported PowerPoint. */
 export async function updateImportedPowerpoint(
   db: D1Database,
   powerpointId: number,
   title: string,
   serviceDate: string,
+  church: string,
   filename: string,
   sourcePath: string,
 ): Promise<void> {
   await db
-    .prepare("UPDATE powerpoints SET title = ?, service_date = ?, filename = ?, source_path = ? WHERE id = ?")
-    .bind(title, serviceDate, filename, sourcePath, powerpointId)
+    .prepare("UPDATE powerpoints SET title = ?, service_date = ?, church = ?, filename = ?, source_path = ? WHERE id = ?")
+    .bind(title, serviceDate, church, filename, sourcePath, powerpointId)
     .run();
+}
+
+/** The words on a PowerPoint's slides, for searching. */
+export async function setPowerpointWords(db: D1Database, powerpointId: number, words: string, textHash: string): Promise<void> {
+  await db.prepare("UPDATE powerpoints SET slide_text = ?, text_hash = ? WHERE id = ?").bind(words, textHash, powerpointId).run();
 }
 
 export async function deletePowerpointRecord(db: D1Database, powerpointId: number): Promise<void> {

@@ -20,7 +20,9 @@ each one shows on that day's events. It works like import_music.py:
   2. CHECK: open slides_plan.csv in Excel. Rows marked "check" have no date
      the script could work out (an ordination, a retreat, the Holy Rosary).
      Type the date in the date column and change "check" to "ok", or mark
-     it "skip". Save.
+     it "skip". The church column is filled in from the name (see CHURCHES
+     below) and is used by the church filter on the site: fix or fill it
+     in if you like. Save.
 
   3. UPLOAD: upload every row marked "ok".
 
@@ -37,9 +39,13 @@ The status column:
 Like the music import, "upload" makes the site match your folders: run
 "scan" then "upload" again after any change. Unchanged files are skipped,
 edited ones replace the site's copy, renamed or moved ones are moved
-without being sent again, a changed title or date is updated, and files
-gone from your folders are removed once you type yes. Running "scan" again
-keeps what you typed in an existing slides_plan.csv.
+without being sent again, a changed title, date or church is updated, and
+files gone from your folders are removed once you type yes. Running "scan"
+again keeps what you typed in an existing slides_plan.csv.
+
+"upload" also sends the words on each PowerPoint's slides (song titles,
+lyrics, readings), so the site's search finds them. Only .pptx and .odp
+files can be read this way; old .ppt files are found by their title.
 
 PowerPoints you use again and again (the Holy Rosary, Stations of the
 Cross) fit better on the site's "Prayers and services" page: put them in
@@ -52,23 +58,39 @@ import argparse
 import csv
 import datetime
 import getpass
+import hashlib
+import html
 import os
 import re
 import sys
 import urllib.parse
+import zipfile
 
 # The music import has the pieces for talking to the site; use the same ones.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from import_music import BIGGEST_FILE_BYTES, ask_site, file_fingerprint, read_csv  # noqa: E402
 
 PLAN_FILE = "slides_plan.csv"
-COLUMNS = ["status", "date", "title", "note", "file"]
+COLUMNS = ["status", "date", "title", "church", "note", "file"]
 
 # Folders (directly inside the folder you scan) holding Sunday and service
 # PowerPoints. Everything inside them is read, including subfolders.
 SLIDES_FOLDERS = ["Sunday Mass Presentations"]
 
 SLIDE_ENDINGS = {".ppt", ".pptx", ".odp"}
+
+# Churches, and words in a file name that mean that church. The first match
+# wins, so put longer, more exact words first. Add a line for a new church.
+CHURCHES = [
+    ("St Teresa's Church", ["st teresa"]),
+    ("St Anne's Catholic Church", ["st anne"]),
+    ("St Thomas More", ["st thomas mo"]),
+    ("St Francis de Sales Catholic Church", ["st francis de sales"]),
+    ("Sacred Heart Cathedral", ["sacred heart cathedral", "cathedral"]),
+]
+
+# The most words kept from one PowerPoint for searching (about 40 pages).
+MOST_TEXT = 100_000
 
 ONE_DAY = datetime.timedelta(days=1)
 ONE_WEEK = datetime.timedelta(days=7)
@@ -299,9 +321,18 @@ def tidy_title(stem):
     return title or stem
 
 
+def church_in_name(name):
+    """The church a file name mentions (see CHURCHES), or ""."""
+    text = re.sub(r"\bst\.?\s+", "st ", name.lower().replace("-", " "))
+    for church, words in CHURCHES:
+        if any(word in text for word in words):
+            return church
+    return ""
+
+
 def make_row(path, filename):
     stem, ending = os.path.splitext(filename)
-    row = {"status": "ok", "date": "", "title": tidy_title(stem), "note": "", "file": path}
+    row = {"status": "ok", "date": "", "title": tidy_title(stem), "church": church_in_name(stem), "note": "", "file": path}
 
     if filename.startswith("~$") or filename.startswith("."):
         row.update(status="skip", note="autosave or hidden file")
@@ -352,6 +383,38 @@ def scan(folder):
     return rows
 
 
+def words_in_slides(path):
+    """
+    The words on a PowerPoint's slides, one line per paragraph, so the site
+    can search them. Works for .pptx and .odp (both are zip files of XML
+    inside). Old .ppt files give "", so they're found by title only.
+    """
+    ending = os.path.splitext(path)[1].lower()
+    try:
+        with zipfile.ZipFile(path) as deck:
+            if ending == ".pptx":
+                slides = [name for name in deck.namelist() if re.match(r"ppt/slides/slide\d+\.xml$", name)]
+                slides.sort(key=lambda name: int(re.search(r"(\d+)\.xml$", name).group(1)))
+                pages = [deck.read(name).decode("utf-8", "replace") for name in slides]
+                paragraph_end, text_part = "</a:p>", r"<a:t>([^<]*)</a:t>"
+            elif ending == ".odp":
+                pages = [deck.read("content.xml").decode("utf-8", "replace")]
+                paragraph_end, text_part = "</text:p>", r">([^<]*)<"
+            else:
+                return ""
+    except (zipfile.BadZipFile, KeyError, OSError):
+        return ""
+
+    lines = []
+    for page in pages:
+        for paragraph in page.split(paragraph_end):
+            line = html.unescape("".join(re.findall(text_part, paragraph)))
+            line = re.sub(r"\s+", " ", line).strip()
+            if line:
+                lines.append(line)
+    return "\n".join(lines)[:MOST_TEXT]
+
+
 # ---------------------------------------------------------------------------
 # The spreadsheet
 # ---------------------------------------------------------------------------
@@ -376,7 +439,7 @@ def read_typed_date(text):
 
 
 def keep_earlier_edits(rows, plan_path):
-    """Keeps what you typed in the last slides_plan.csv: status, date and title."""
+    """Keeps what you typed in the last slides_plan.csv: status, date, title and church."""
     if not os.path.exists(plan_path):
         return
     earlier = {row["file"]: row for row in read_csv(plan_path)}
@@ -387,6 +450,8 @@ def keep_earlier_edits(rows, plan_path):
         row["status"] = old["status"].strip().lower() or row["status"]
         row["date"] = read_typed_date(old["date"]) or row["date"]
         row["title"] = old["title"].strip() or row["title"]
+        if "church" in old:
+            row["church"] = old["church"].strip()
         row["note"] = old["note"]
 
 
@@ -410,9 +475,10 @@ def upload(plan_path, site, token):
     on_site = {}
     for line in ask_site(site, token, "GET", "/api/import/slides/done").splitlines():
         parts = line.split("\t")
-        if len(parts) >= 4:
-            fingerprint, path, title, date = parts[:4]
-            on_site[path] = {"hash": fingerprint, "title": title, "date": date}
+        if len(parts) >= 6:
+            fingerprint, path, title, date, church, words_fingerprint = parts[:6]
+            on_site[path] = {"hash": fingerprint, "title": title, "date": date, "church": church,
+                             "words": words_fingerprint}
 
     wanted = []
     for row in rows:
@@ -448,14 +514,15 @@ def upload(plan_path, site, token):
                 to_send.append(row)
         elif site_copy["hash"] != row["fingerprint"]:
             to_send.append(row)
-        elif site_copy["title"] != row["title"].strip() or site_copy["date"] != row["date"]:
+        elif (site_copy["title"] != row["title"].strip() or site_copy["date"] != row["date"]
+              or site_copy["church"] != row.get("church", "").strip()):
             to_relabel.append(row)
     moved_from = {old_path for old_path, _ in to_move}
     to_delete = [path for path in gone if path not in moved_from]
 
     print("On the site:", len(on_site), "PowerPoints. Changes:")
     print("  new or edited:", len(to_send), " renamed or moved:", len(to_move),
-          " new title or date:", len(to_relabel), " to remove:", len(to_delete))
+          " new title, date or church:", len(to_relabel), " to remove:", len(to_delete))
 
     failed = 0
     for old_path, row in to_move:
@@ -465,6 +532,27 @@ def upload(plan_path, site, token):
     for number, row in enumerate(to_send, start=1):
         print("  [" + str(number) + "/" + str(len(to_send)) + "]", end="")
         failed += send(site, token, "/api/import/slides/file", row, {"source": row["file"], "hash": row["fingerprint"]})
+
+    # The words on the slides, for searching. Sent on their own, and only
+    # when they've changed (or the site doesn't have them yet).
+    words_on_site = {row["file"]: on_site.get(row["file"], {}).get("words", "") for row in wanted}
+    for old_path, row in to_move:
+        words_on_site[row["file"]] = on_site[old_path]["words"]
+    words_sent = 0
+    for row in wanted:
+        words = words_in_slides(row["file"])
+        words_fingerprint = hashlib.sha256(words.encode("utf-8")).hexdigest()
+        if words == "" or words_on_site[row["file"]] == words_fingerprint:
+            continue
+        try:
+            ask_site(site, token, "POST", "/api/import/slides/words?" + urllib.parse.urlencode(
+                {"source": row["file"], "hash": words_fingerprint}), words.encode("utf-8"))
+            words_sent += 1
+        except RuntimeError as error:
+            print("  FAILED to send the words of", row["file"], "-", error)
+            failed += 1
+    if words_sent:
+        print("  Sent the words of", words_sent, "PowerPoints, for searching.")
 
     if to_delete:
         print()
@@ -488,7 +576,8 @@ def send(site, token, address, row, extra):
     details = dict(extra)
     data = None
     if row is not None:
-        details.update(title=row["title"].strip(), date=row["date"], filename=os.path.basename(row["file"]))
+        details.update(title=row["title"].strip(), date=row["date"], church=row.get("church", "").strip(),
+                       filename=os.path.basename(row["file"]))
         if address.endswith("/file"):
             with open(row["file"], "rb") as f:
                 data = f.read()
