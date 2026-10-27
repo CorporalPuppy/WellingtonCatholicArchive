@@ -12,7 +12,8 @@
 // ===========================================================================
 
 import { Hono } from "hono";
-import { getSong, getSongFile, getSongFileKinds, getSongFiles, getSongs } from "../database";
+import { getAllSongFileSummaries, getSong, getSongFile, getSongFiles, getSongs } from "../database";
+import type { SongFileSummary } from "../database";
 import { canSeeMemberPages, describeFileLabels, formatFileSize, isAlwaysPublicKind } from "../helpers";
 import { sendFileFromStorage } from "../files";
 import { requireMemberAccess } from "../middleware";
@@ -47,8 +48,9 @@ async function showSongList(c: Context<AppEnv>, section: "music" | "prayers") {
   const has = c.req.query("has") ?? "";
   const filter = RESOURCE_FILTERS.find((item) => item.kind === has) ?? null;
   const allSongs = await getSongs(c.env.DB, search, section);
-  const fileKinds = await getSongFileKinds(c.env.DB);
-  const songs = filter === null ? allSongs : allSongs.filter((song) => (fileKinds.get(song.id) ?? {})[filter.kind] > 0);
+  const filesBySong = groupFilesBySong(await getAllSongFileSummaries(c.env.DB));
+  const filesOf = (song: SongRow) => filesBySong.get(song.id) ?? [];
+  const songs = filter === null ? allSongs : allSongs.filter((song) => filesOf(song).some((file) => file.kind === filter.kind));
   const isPrayers = section === "prayers";
   const address = isPrayers ? "/prayers" : "/music";
   const groups = groupByFirstLetter(songs);
@@ -119,12 +121,13 @@ async function showSongList(c: Context<AppEnv>, section: "music" | "prayers") {
           <ul class="score-grid">
             {group.songs.map((song) => (
               <li>
-                <SongCard song={song} href={address + "/" + song.id} kinds={fileKinds.get(song.id) ?? {}} />
+                <SongCard song={song} href={address + "/" + song.id} files={filesOf(song)} />
               </li>
             ))}
           </ul>
         </section>
       ))}
+      <CoverPreviewScript />
     </div>,
   );
 }
@@ -161,12 +164,12 @@ function groupByFirstLetter(songs: SongRow[]): { letter: string; songs: SongRow[
  * a "cover" with staff lines and the title, then the title, author and
  * what's available underneath. The whole card is the link.
  */
-function SongCard(props: { song: SongRow; href: string; kinds: Record<string, number> }) {
+function SongCard(props: { song: SongRow; href: string; files: SongFileSummary[] }) {
   const song = props.song;
-  const available = RESOURCE_FILTERS.filter((item) => props.kinds[item.kind] > 0);
+  const available = RESOURCE_FILTERS.filter((item) => props.files.some((file) => file.kind === item.kind));
   return (
     <a href={props.href} class="score-card">
-      <ScoreCover song={song} />
+      <ScoreCover song={song} files={props.files} />
       <span class="score-card-text">
         <strong>{song.title}</strong>
         {song.author !== "" && <span class="score-card-author">{song.author}</span>}
@@ -182,17 +185,79 @@ function SongCard(props: { song: SongRow; href: string; kinds: Record<string, nu
   );
 }
 
-/** The paper "cover" of a song: staff lines, the title and its key. */
-function ScoreCover(props: { song: SongRow; large?: boolean }) {
+/** Every song's files, by song id. */
+function groupFilesBySong(files: SongFileSummary[]): Map<number, SongFileSummary[]> {
+  const bySong = new Map<number, SongFileSummary[]>();
+  for (const file of files) {
+    bySong.set(file.song_id, [...(bySong.get(file.song_id) ?? []), file]);
+  }
+  return bySong;
+}
+
+/**
+ * The file whose first page shows faintly behind a song's cover: sheet
+ * music if there is any, then a chord chart, then slides, then anything
+ * else. Only PDFs and pictures can be shown, so e.g. a PowerPoint is
+ * passed over. null = nothing to show (the cover is just drawn).
+ */
+function pickCoverFile(files: SongFileSummary[]): SongFileSummary | null {
+  const order = ["sheet", "chords", "slides"];
+  const showable = files.filter((file) => {
+    const type = previewType(file);
+    return type === "pdf" || type === "image";
+  });
+  for (const kind of order) {
+    const found = showable.find((file) => file.kind === kind);
+    if (found !== undefined) return found;
+  }
+  return showable[0] ?? null;
+}
+
+/**
+ * The address of a file for a cover preview. The "v" is part of the
+ * file's storage name, which changes when the file is replaced, so the
+ * browser can keep its copy for good (see /files/:id below) and only
+ * fetches it again after a change.
+ */
+function coverFileUrl(file: SongFileSummary): string {
+  return "/files/" + file.id + "?v=" + fileVersion(file.r2_key);
+}
+
+/** A short code that changes whenever a file is replaced: the start of its random storage name. */
+function fileVersion(r2Key: string): string {
+  return (r2Key.split("/").pop() ?? "").slice(0, 8);
+}
+
+/**
+ * The paper "cover" of a song: staff lines, the title and its key. Behind
+ * it, faintly, the first page of its sheet music (or chords, or slides),
+ * if there's one we can show. Pictures are shown straight away; PDFs are
+ * drawn by public/covers.js once the cover scrolls into view.
+ */
+function ScoreCover(props: { song: SongRow; files: SongFileSummary[]; large?: boolean }) {
   const song = props.song;
+  const coverFile = pickCoverFile(props.files);
+  const coverType = coverFile === null ? "" : previewType(coverFile);
   return (
-    <span class={props.large ? "score-cover score-cover-large" : "score-cover"} aria-hidden="true">
+    <span
+      class={props.large ? "score-cover score-cover-large" : "score-cover"}
+      aria-hidden="true"
+      data-preview-pdf={coverFile !== null && coverType === "pdf" ? coverFileUrl(coverFile) : undefined}
+    >
+      {coverFile !== null && coverType === "image" && (
+        <img class="score-cover-preview" src={coverFileUrl(coverFile)} alt="" loading="lazy" />
+      )}
       <span class="score-cover-clef">♫</span>
       <span class="score-cover-title">{song.title}</span>
       {song.author !== "" && <span class="score-cover-author">{song.author}</span>}
       {song.song_key !== "" && <span class="score-cover-key">{song.song_key}</span>}
     </span>
   );
+}
+
+/** Loads public/covers.js, which draws the PDF previews behind the covers. */
+function CoverPreviewScript() {
+  return <script src="/covers.js" defer></script>;
 }
 
 // ---------------------------------------------------------------------------
@@ -233,7 +298,7 @@ async function showSong(c: Context<AppEnv>, songId: number) {
 
       {/* Laid out like a piece in a sheet music shop: the cover on the left, the details on the right. */}
       <section class="song-hero">
-        <ScoreCover song={song} large={true} />
+        <ScoreCover song={song} files={files} large={true} />
         <div class="song-hero-text">
           {facts.length > 0 && <p class="music-eyebrow">{facts.join(" · ")}</p>}
           <h1 class="music-title">{song.title}</h1>
@@ -307,6 +372,7 @@ async function showSong(c: Context<AppEnv>, songId: number) {
           </ul>
         </details>
       ))}
+      <CoverPreviewScript />
     </div>,
   );
 }
@@ -381,7 +447,7 @@ function siteAddress(c: Context<AppEnv>): string {
  *              own computer, and only for files anyone can open)
  *   "none"   - no preview, just download (e.g. MuseScore files)
  */
-function previewType(file: SongFileRow): string {
+function previewType(file: Pick<SongFileRow, "filename" | "content_type" | "kind">): string {
   const name = file.filename.toLowerCase();
   const type = file.content_type;
 
@@ -473,7 +539,16 @@ routes.get("/files/:id", async (c) => {
     return c.redirect("/login?next=" + encodeURIComponent(c.req.path));
   }
 
-  return await sendFileFromStorage(c, file.r2_key, file.filename, file.content_type);
+  const response = await sendFileFromStorage(c, file.r2_key, file.filename, file.content_type);
+
+  // Cover previews ask for "?v=...", which changes when the file is
+  // replaced. So the browser can keep its copy for a year, and scrolling
+  // the music library again doesn't use up the free plan's daily requests.
+  if (c.req.query("v") === fileVersion(file.r2_key) && response.ok) {
+    const sharing = c.env.EVERYTHING_PUBLIC === "yes" || isAlwaysPublicKind(file.kind) ? "public" : "private";
+    response.headers.set("Cache-Control", sharing + ", max-age=31536000, immutable");
+  }
+  return response;
 });
 
 export default routes;

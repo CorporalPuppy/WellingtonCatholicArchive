@@ -960,6 +960,32 @@ main:has(> .music-page) { max-width: 1040px; }
   border-radius: 3px;
   pointer-events: none;
 }
+/* The real first page, faintly behind the cover. "multiply" lets the
+   paper colour show through the page's white, so only the notes show. */
+.score-cover-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+  opacity: 0.22;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+canvas.score-cover-preview { opacity: 0; transition: opacity 0.6s; }
+canvas.score-cover-preview.shown { opacity: 0.22; }
+/* In dark mode: the page is flipped to light notes on dark, then "screen"
+   lets the charcoal paper show through. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .score-cover-preview { filter: invert(1); mix-blend-mode: screen; }
+}
+:root[data-theme="dark"] .score-cover-preview { filter: invert(1); mix-blend-mode: screen; }
+/* The writing on the cover stays on top of the preview. */
+.score-cover > span { position: relative; z-index: 1; }
+.score-cover > .score-cover-key { position: absolute; }
+.score-cover::before { z-index: 1; }
+
 .score-cover-clef { font-size: 1.4rem; color: var(--gold); line-height: 1; }
 .score-cover-title {
   font-family: var(--serif);
