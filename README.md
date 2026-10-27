@@ -96,7 +96,11 @@ choir-site/
 │   ├── 0001_auth.sql       login tables (used by Better Auth)
 │   ├── 0002_choir.sql      parishes, events, songs, files, rosters, set lists
 │   ├── 0003_powerpoints_and_readings.sql
-│   └── 0004_musescore_files.sql   adds MuseScore as a kind of song file
+│   ├── 0004_musescore_files.sql   adds MuseScore as a kind of song file
+│   └── 0005_song_file_labels.sql  adds lyrics, slides, and a key and version per file
+│
+├── tools/
+│   └── import_music.py     bulk import of your music folders (see "Importing your music library")
 │
 ├── public/                 plain files sent as-is
 │   ├── styles.css          colours and layout (change colours at the top)
@@ -132,7 +136,8 @@ choir-site/
         ├── admin-songs.tsx    add/edit songs, upload files
         ├── admin-users.tsx    create and manage member accounts
         ├── admin-powerpoints.tsx  upload and delete PowerPoints
-        └── admin-readings.tsx     enter each day's readings
+        ├── admin-readings.tsx     enter each day's readings
+        └── import-api.ts          where import_music.py sends files
 ```
 
 ### Following one request through the code
@@ -323,10 +328,42 @@ can pick several files at once, and the site sorts them by their names:
 | `.pdf` | Sheet music | Preview, Open, Download |
 | `.docx`, `.doc`, `.txt`, or "chord" in the name | Chord charts | Preview (Word files only once the site is online), Download |
 | `.mscz` | MuseScore files | Download (open in the free MuseScore app) |
+| `.docx` with "lyric" in the name | Lyrics | Download |
+| `.pptx`, `.ppt` | Lyrics slides | Download |
 | `.mp3`, `.m4a`, `.wav` | Recordings | Player, Download |
 
+Every file can also have a **key** (e.g. `D`, `Am`) and a **version** (e.g.
+`with intro`, `v2`, `Capo 3`, `Page 2`, `Sacred Heart style`), so a song can
+hold several copies in different keys or styles. They show as a small label
+next to the file.
+
 Sheet music, chord charts and MuseScore files are always public, because
-set lists link to them. Recordings follow `EVERYTHING_PUBLIC`.
+set lists link to them. Lyrics, slides and recordings follow `EVERYTHING_PUBLIC`.
+
+### Importing your music library
+
+`tools/import_music.py` uploads a whole music folder at once. It expects
+the folders to be split by type (`Music Chords`, `Music Sheets`, `Scores`,
+`Music Lyrics PPT`, ...); the list is `FOLDERS` at the top of the script, so
+add a line there for a new folder. It only uses Python's built-in
+libraries.
+
+1. Make up a long random import code and give it to the site (once):
+   `npx wrangler secret put IMPORT_TOKEN`
+2. Scan your folder. This only reads file names and writes `import_plan.csv`:
+   `python tools/import_music.py scan "C:\Users\Elijah\Documents\Music"`
+3. Open `import_plan.csv` in Excel. Each row is one file, with the song it
+   belongs to, its kind, key and version. Rows marked `check` say why in the
+   `note` column: fix the title, key or version, then change `check` to `ok`
+   (or `skip`). Save it as **CSV UTF-8** so letters like ō survive.
+4. Upload every `ok` row:
+   `python tools/import_music.py upload --site https://your-site`
+   It asks for the import code. Songs that don't exist yet are created.
+
+Running either step again is safe: `scan` keeps what you changed in the
+spreadsheet, and `upload` skips files the site already has. If you don't
+want the import switched on, delete the secret afterwards with
+`npx wrangler secret delete IMPORT_TOKEN`.
 
 ---
 

@@ -562,6 +562,16 @@ details.file-section[open] > summary::before { transform: rotate(45deg); }
   color: var(--accent);
   background: var(--accent-soft);
 }
+/* The key and version of a file, e.g. "Key of D · with intro". */
+.file-labels {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
 details.file-section > p { margin: 12px 4px 0; }
 details.file-section > .file-list { margin: 10px 0 0 16px; }  /* indent files under their heading */
 

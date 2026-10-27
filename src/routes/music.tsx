@@ -9,7 +9,7 @@
 
 import { Hono } from "hono";
 import { getSong, getSongFile, getSongFiles, getSongs } from "../database";
-import { canSeeMemberPages, formatFileSize, isAlwaysPublicKind } from "../helpers";
+import { canSeeMemberPages, describeFileLabels, formatFileSize, isAlwaysPublicKind } from "../helpers";
 import { sendFileFromStorage } from "../files";
 import { requireMemberAccess } from "../middleware";
 import { renderPage } from "../pages/render";
@@ -119,6 +119,8 @@ const FILE_SECTIONS = [
     heading: "MuseScore files",
     help: "Open these in the free MuseScore app (musescore.org) to play, transpose or print.",
   },
+  { kind: "lyrics", heading: "Lyrics", help: "" },
+  { kind: "slides", heading: "Lyrics slides", help: "PowerPoints of the words, for the screen at Mass." },
   { kind: "recording", heading: "Recordings", help: "" },
   { kind: "other", heading: "Other files", help: "" },
 ];
@@ -172,6 +174,7 @@ function SongFileItem(props: { file: SongFileRow; siteAddress: string }) {
   const viewUrl = "/files/" + file.id;
   const downloadUrl = "/files/" + file.id + "?download=1";
   const preview = previewType(file);
+  const labels = describeFileLabels(file.music_key, file.version);
 
   // Microsoft's viewer needs the full address of the file.
   const officeViewerUrl =
@@ -182,6 +185,7 @@ function SongFileItem(props: { file: SongFileRow; siteAddress: string }) {
       <div class="file-row">
         <div>
           <strong>{file.filename}</strong> <span class="muted">({formatFileSize(file.size)})</span>
+          {labels !== "" && <div class="file-labels">{labels}</div>}
         </div>
         <div class="file-actions">
           {preview !== "none" && preview !== "audio" && (

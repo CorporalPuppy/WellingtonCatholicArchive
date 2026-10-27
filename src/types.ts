@@ -11,6 +11,7 @@ export type Env = {
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
   SETUP_TOKEN?: string;
+  IMPORT_TOKEN?: string;
 };
 
 export type AppEnv = {
@@ -55,11 +56,14 @@ export type SongRow = {
 export type SongFileRow = {
   id: number;
   song_id: number;
-  kind: "sheet" | "chords" | "musescore" | "recording" | "other";
+  kind: "sheet" | "chords" | "musescore" | "lyrics" | "slides" | "recording" | "other";
+  music_key: string; // e.g. "D" or "Am" ("" = not known)
+  version: string; //   e.g. "with intro", "Page 2", "Sacred Heart style" ("" = none)
   r2_key: string;
   filename: string;
   content_type: string;
   size: number;
+  source_path: string; // where the bulk import found it ("" = uploaded on the website)
   uploaded_at: string;
 };
 

@@ -171,7 +171,7 @@ function SetlistItem(props: { item: SetlistRow; sheetFiles: SongFileRow[]; linkT
       <div class="setlist-links">
         {filesForThisSong.map((file) => (
           <a href={"/files/" + file.id} target="_blank" title={file.filename}>
-            {FILE_KIND_LABELS[file.kind]} ({fileExtension(file.filename)})
+            {FILE_KIND_LABELS[file.kind]} ({[fileExtension(file.filename), file.music_key, file.version].filter((part) => part !== "").join(", ")})
           </a>
         ))}
         {item.sheet_music_url !== "" && (

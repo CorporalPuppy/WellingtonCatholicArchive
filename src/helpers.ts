@@ -108,9 +108,61 @@ export const FILE_KIND_LABELS: Record<string, string> = {
   sheet: "Sheet music",
   chords: "Chord chart",
   musescore: "MuseScore file",
+  lyrics: "Lyrics",
+  slides: "Lyrics slides",
   recording: "Recording",
   other: "Other",
 };
+
+/**
+ * The type of a file (its "content type", e.g. "application/pdf") from its
+ * name. browserType is what the browser said, if anything; browsers don't
+ * know some music file types, so we fill those in ourselves.
+ */
+export function workOutContentType(filename: string, browserType: string): string {
+  const name = filename.toLowerCase();
+  const knownTypes: Record<string, string> = {
+    ".cho": "text/plain; charset=utf-8",
+    ".chordpro": "text/plain; charset=utf-8",
+    ".txt": "text/plain; charset=utf-8",
+    ".mscz": "application/x-musescore",
+    ".mscx": "application/x-musescore+xml",
+    ".pdf": "application/pdf",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".odp": "application/vnd.oasis.opendocument.presentation",
+    ".odt": "application/vnd.oasis.opendocument.text",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".wav": "audio/wav",
+  };
+  for (const ending in knownTypes) {
+    if (name.endsWith(ending)) {
+      return knownTypes[ending];
+    }
+  }
+  return browserType || "application/octet-stream";
+}
+
+/**
+ * The key and version of a song file in one short line, e.g.
+ * "Key of D · with intro". Empty if the file has neither.
+ */
+export function describeFileLabels(musicKey: string, version: string): string {
+  const parts: string[] = [];
+  if (musicKey !== "") {
+    parts.push("Key of " + musicKey);
+  }
+  if (version !== "") {
+    parts.push(version);
+  }
+  return parts.join(" · ");
+}
 
 /**
  * Sheet music, chord charts and MuseScore files are always public, because
@@ -123,7 +175,8 @@ export function isAlwaysPublicKind(kind: string): boolean {
 
 /**
  * Guesses what kind of music file this is from its name and type, e.g.
- * "gloria.mscz" is a MuseScore file and "gloria-chords.docx" a chord chart.
+ * "gloria.mscz" is a MuseScore file, "gloria.pptx" lyrics slides and
+ * "gloria-chords.docx" a chord chart.
  * Admins can still pick the kind themselves when uploading.
  */
 export function guessFileKind(filename: string, contentType: string): string {
@@ -134,6 +187,13 @@ export function guessFileKind(filename: string, contentType: string): string {
   }
   if (contentType.startsWith("audio/") || name.endsWith(".mp3") || name.endsWith(".m4a") || name.endsWith(".wav")) {
     return "recording";
+  }
+  if (name.endsWith(".ppt") || name.endsWith(".pptx") || name.endsWith(".odp")) {
+    return "slides";
+  }
+  // Word documents with "lyric" in the name hold just the words.
+  if (name.includes("lyric") && (name.endsWith(".doc") || name.endsWith(".docx") || name.endsWith(".odt"))) {
+    return "lyrics";
   }
   // Word documents, text files and files with "chord" in the name.
   if (
