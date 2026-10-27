@@ -29,10 +29,11 @@ export function Layout(props: LayoutProps) {
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <meta name="theme-color" content="#fbfaf7" />
 
-        {/* The "Inter" font from Google Fonts: clean and modern, easy to read. */}
+        {/* Fonts from Google Fonts (free): "Inter", clean and modern, easy to read,
+            and "Cormorant Garamond", a classic serif for the music library's titles. */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Inter:wght@400;500;600;700;800&display=swap" />
         <link rel="stylesheet" href="/styles.css" />
         {/* Picks light or dark mode before the page shows (see public/theme.js). */}
         <script src="/theme.js"></script>

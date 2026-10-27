@@ -252,6 +252,20 @@ export async function getSongs(db: D1Database, search: string, section: "" | "mu
   return result.results;
 }
 
+export type SongFileSummary = Pick<SongFileRow, "id" | "song_id" | "kind" | "filename" | "content_type" | "r2_key">;
+
+/**
+ * A short line about every song file (no sizes or labels), for the music
+ * library's cards: what each song has, and which file to preview on its
+ * cover. One query for all songs.
+ */
+export async function getAllSongFileSummaries(db: D1Database): Promise<SongFileSummary[]> {
+  const result = await db
+    .prepare("SELECT id, song_id, kind, filename, content_type, r2_key FROM song_files ORDER BY id")
+    .all<SongFileSummary>();
+  return result.results;
+}
+
 export async function getSong(db: D1Database, songId: number): Promise<SongRow | null> {
   return await db.prepare("SELECT * FROM songs WHERE id = ?").bind(songId).first<SongRow>();
 }
