@@ -124,10 +124,26 @@ export const FILE_KIND_LABELS: Record<string, string> = {
   chords: "Chord chart",
   musescore: "MuseScore file",
   lyrics: "Lyrics",
-  slides: "Lyrics slides",
+  slides: "Slides",
   recording: "Recording",
   other: "Other",
 };
+
+/** The two parts of the site a song can be in (songs.section). */
+export const SONG_SECTION_LABELS: Record<string, string> = {
+  music: "Music library",
+  prayers: "Prayers and services",
+};
+
+/** The public page for a song, prayer or service. */
+export function songPageLink(song: { id: number; section: string }): string {
+  return (song.section === "prayers" ? "/prayers/" : "/music/") + song.id;
+}
+
+/** Reads a section from a form or address: "prayers", or "music" for anything else. */
+export function readSongSection(text: string): "music" | "prayers" {
+  return text === "prayers" ? "prayers" : "music";
+}
 
 /**
  * The type of a file (its "content type", e.g. "application/pdf") from its

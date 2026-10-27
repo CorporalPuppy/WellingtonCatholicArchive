@@ -98,7 +98,8 @@ choir-site/
 │   ├── 0003_powerpoints_and_readings.sql
 │   ├── 0004_musescore_files.sql   adds MuseScore as a kind of song file
 │   ├── 0005_song_file_labels.sql  adds lyrics, slides, and a key and version per file
-│   └── 0006_song_file_fingerprint.sql  lets the import spot edited files
+│   ├── 0006_song_file_fingerprint.sql  lets the import spot edited files
+│   └── 0007_slides_and_prayers.sql  slides per event, and Prayers and services
 │
 ├── tools/
 │   └── import_music.py     bulk import of your music folders (see "Importing your music library")
@@ -330,7 +331,7 @@ can pick several files at once, and the site sorts them by their names:
 | `.docx`, `.doc`, `.txt`, or "chord" in the name | Chord charts | Preview (Word files only once the site is online), Download |
 | `.mscz` | MuseScore files | Download (open in the free MuseScore app) |
 | `.docx` with "lyric" in the name | Lyrics | Download |
-| `.pptx`, `.ppt` | Lyrics slides | Download |
+| `.pptx`, `.ppt` | Slides | Download |
 | `.mp3`, `.m4a`, `.wav` | Recordings | Player, Download |
 
 Every file can also have a **key** (e.g. `D`, `Am`) and a **version** (e.g.
@@ -341,13 +342,27 @@ next to the file.
 Sheet music, chord charts and MuseScore files are always public, because
 set lists link to them. Lyrics, slides and recordings follow `EVERYTHING_PUBLIC`.
 
+### Slides for each Sunday, and Prayers and services
+
+- **Slides for a Mass or service:** open the event under Admin > Events and
+  use **Slides** to upload its PowerPoint. It shows on the event's page (for
+  members) and in the PowerPoint archive under that date. PowerPoints
+  uploaded in the archive show on every event on the same date. Each
+  song's own slides are also linked from the set list.
+- **Prayers and services** (`/prayers`): the Creeds, the Prayer of St
+  Francis, rosaries, special services. They're kept like songs (with
+  slides, words and any other files), but listed on their own page. Pick
+  "Prayers and services" in a song's **Show it under** menu, or use **Add a
+  prayer or service**. They can go in a set list too (e.g. the Creed).
+
 ### Importing your music library
 
 `tools/import_music.py` uploads a whole music folder at once. It expects
 the folders to be split by type (`Music Chords`, `Music Sheets`, `Scores`,
 `Music Lyrics PPT`, ...); the list is `FOLDERS` at the top of the script, so
-add a line there for a new folder. It only uses Python's built-in
-libraries.
+add a line there for a new folder. Folders named in `PRAYERS_FOLDERS`
+go under Prayers and services instead of the music library. It only uses
+Python's built-in libraries.
 
 1. Make up a long random import code and give it to the site (once):
    `npx wrangler secret put IMPORT_TOKEN`

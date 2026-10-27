@@ -5,15 +5,16 @@
 // Each event's set list ("what we'll sing") is always public, with links to
 // the sheet music and YouTube recordings, so anyone can see what the choir
 // is singing. Rosters and members-only events are shown to members (or to
-// everyone, while EVERYTHING_PUBLIC is "yes").
+// everyone, while EVERYTHING_PUBLIC is "yes"), and so are the event's
+// slides, like the rest of the PowerPoint archive.
 // ===========================================================================
 
 import { Hono } from "hono";
-import { getEvent, getRoster, getSetlist, getSheetFilesForEvent, getUpcomingEvents } from "../database";
-import { canSeeMemberPages, FILE_KIND_LABELS, formatEventTime, getTodaysDate } from "../helpers";
+import { getEvent, getPowerpointsForEvent, getRoster, getSetlist, getSheetFilesForEvent, getUpcomingEvents } from "../database";
+import { canSeeMemberPages, FILE_KIND_LABELS, formatEventTime, formatFileSize, getTodaysDate, isAlwaysPublicKind, songPageLink } from "../helpers";
 import { renderPage } from "../pages/render";
 import { EventList } from "../pages/event-list";
-import type { AppEnv, EventRow, SetlistRow, SongFileRow } from "../types";
+import type { AppEnv, EventRow, PowerpointRow, SetlistRow, SongFileRow } from "../types";
 
 const routes = new Hono<AppEnv>();
 
@@ -61,7 +62,10 @@ routes.get("/", async (c) => {
             <FeatureCard link="/music" title="Music library" text="Sheet music, chord charts, MuseScore files and recordings." />
           )}
           {canSeeMemberPages(c) && (
-            <FeatureCard link="/powerpoints" title="PowerPoints" text="Slides with the words, ready to project at Mass." />
+            <FeatureCard link="/prayers" title="Prayers and services" text="The Creeds, the Prayer of St Francis, rosaries and special services." />
+          )}
+          {canSeeMemberPages(c) && (
+            <FeatureCard link="/powerpoints" title="PowerPoints" text="The slides for each Sunday, ready to project at Mass." />
           )}
         </div>
       </section>
@@ -94,14 +98,20 @@ routes.get("/events/:id", async (c) => {
   }
 
   const setlist = await getSetlist(c.env.DB, eventId);
-  const sheetFiles = await getSheetFilesForEvent(c.env.DB, eventId);
+  const linkToMusicLibrary = canSeeMemberPages(c);
+  // Lyrics slides aren't public (see isAlwaysPublicKind), so only members get links to them.
+  const sheetFiles = (await getSheetFilesForEvent(c.env.DB, eventId)).filter(
+    (file) => linkToMusicLibrary || isAlwaysPublicKind(file.kind),
+  );
 
-  // Rosters contain people's names, so normally only members see them.
+  // Rosters contain people's names, and slides follow the PowerPoint
+  // archive, so normally only members see them.
   let roster = null;
+  let slides: PowerpointRow[] | null = null;
   if (canSeeMemberPages(c)) {
     roster = await getRoster(c.env.DB, eventId);
+    slides = await getPowerpointsForEvent(c.env.DB, eventId, event.starts_at.slice(0, 10));
   }
-  const linkToMusicLibrary = canSeeMemberPages(c);
 
   return renderPage(
     c,
@@ -125,6 +135,31 @@ routes.get("/events/:id", async (c) => {
           Copy link to share
         </button>
       </section>
+
+      {slides !== null && (
+        <section>
+          <h2>Slides</h2>
+          {slides.length === 0 && <p>The slides for this one haven't been uploaded yet.</p>}
+          <ul class="file-list">
+            {slides.map((powerpoint) => (
+              <li>
+                <div class="file-row">
+                  <div>
+                    <strong>{powerpoint.title}</strong>{" "}
+                    <span class="muted">({powerpoint.filename}, {formatFileSize(powerpoint.size)})</span>
+                    {powerpoint.notes !== "" && <div class="muted">{powerpoint.notes}</div>}
+                  </div>
+                  <div class="file-actions">
+                    <a href={"/powerpoints/" + powerpoint.id + "/file?download=1"} class="button button-small">
+                      Download
+                    </a>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {roster !== null && (
         <section>
@@ -188,7 +223,7 @@ function SetlistItem(props: { item: SetlistRow; sheetFiles: SongFileRow[]; linkT
   return (
     <li>
       {item.notes !== "" && <span class="setlist-part">{item.notes}</span>}
-      {props.linkToMusicLibrary ? <a href={"/music/" + item.song_id}><strong>{item.title}</strong></a> : <strong>{item.title}</strong>}
+      {props.linkToMusicLibrary ? <a href={songPageLink({ id: item.song_id, section: item.section })}><strong>{item.title}</strong></a> : <strong>{item.title}</strong>}
       {item.author !== "" && <span class="muted"> - {item.author}</span>}
       {item.song_key !== "" && <span class="muted"> (key of {item.song_key})</span>}
 

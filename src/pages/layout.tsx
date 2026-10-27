@@ -49,6 +49,7 @@ export function Layout(props: LayoutProps) {
               <a href="/events">Calendar</a>
               <a href="/readings">Readings</a>
               {props.showMemberLinks && <a href="/music">Music</a>}
+              {props.showMemberLinks && <a href="/prayers">Prayers</a>}
               {props.showMemberLinks && <a href="/powerpoints">PowerPoints</a>}
               {isAdmin && <a href="/admin">Admin</a>}
               {user !== null && <a href="/account">My account</a>}

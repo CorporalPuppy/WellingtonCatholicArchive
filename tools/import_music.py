@@ -84,6 +84,11 @@ FOLDERS = {
     "Music Lyrics PPT (St. Thomas Moore)": ("slides", "St Thomas More style"),
 }
 
+# Folders of prayers, rosaries and special services. Files in these go
+# under "Prayers and services" on the site instead of the music library.
+# Put the exact folder name here (the same name as in FOLDERS above).
+PRAYERS_FOLDERS = {"Prayers and Services PPT"}
+
 # Some file types always mean the same kind, whatever folder they're in.
 KIND_BY_ENDING = {
     ".mscz": "musescore",
@@ -557,6 +562,7 @@ def upload(plan_path, site, token):
             "filename": os.path.basename(path),
             "source": path,
             "hash": fingerprint,
+            "section": section_for(path),
         }
         try:
             answer = ask_site(site, token, "POST", "/api/import/song-file?" + urllib.parse.urlencode(details), data)
@@ -572,6 +578,14 @@ def upload(plan_path, site, token):
     print("Done.", uploaded, "new,", replaced, "replaced (edited since last time),", failed, "failed.")
     if failed:
         print("Run the upload again to retry the failed ones.")
+
+
+def section_for(path):
+    """ "prayers" if the file is inside one of PRAYERS_FOLDERS, else "music". """
+    folders = re.split(r"[\\/]", path)
+    if any(folder in PRAYERS_FOLDERS for folder in folders):
+        return "prayers"
+    return "music"
 
 
 def ask_site(site, token, method, address, data=None):

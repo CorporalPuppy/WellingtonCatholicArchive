@@ -51,6 +51,7 @@ export type SongRow = {
   notes: string;
   youtube_url: string;
   sheet_music_url: string;
+  section: "music" | "prayers"; // "prayers" = Prayers and services
 };
 
 export type SongFileRow = {
@@ -87,6 +88,7 @@ export type SetlistRow = {
   song_key: string;
   youtube_url: string;
   sheet_music_url: string;
+  section: "music" | "prayers";
 };
 
 export type PowerpointRow = {
@@ -99,6 +101,8 @@ export type PowerpointRow = {
   content_type: string;
   size: number;
   uploaded_at: string;
+  event_id: number | null; // the event it was made for (null = matched by date only)
+  event_title: string | null; // filled in from the events table
 };
 
 export type ReadingsRow = {

@@ -14,8 +14,10 @@
 // know about it is in the address, e.g.
 //   /api/import/song-file?title=Priestly%20People&kind=sheet&key=G
 //     &version=with%20intro&filename=Priestly%20People.pdf&source=C:\...
-//     &hash=3f2a...
-// If no song has that title yet, one is made. If this source was imported
+//     &hash=3f2a...&section=prayers
+// If no song has that title yet, one is made. section=prayers puts the song
+// under Prayers and services (prayers, rosaries, special services); without
+// it, a new song goes in the music library. If this source was imported
 // before with a different fingerprint (the file was edited), the copy on
 // the site is replaced and keeps its place, kind, key and version.
 // ===========================================================================
@@ -30,9 +32,10 @@ import {
   getSongFileBySourcePath,
   getStorageUsed,
   replaceSongFileContents,
+  setSongSection,
 } from "../database";
 import { makeStorageKey } from "../files";
-import { FILE_KIND_LABELS, workOutContentType, wouldGoOverFreeStorage } from "../helpers";
+import { FILE_KIND_LABELS, readSongSection, workOutContentType, wouldGoOverFreeStorage } from "../helpers";
 import type { AppEnv } from "../types";
 
 const routes = new Hono<AppEnv>();
@@ -72,6 +75,7 @@ routes.post("/api/import/song-file", async (c) => {
   const version = (c.req.query("version") ?? "").trim();
   const filename = (c.req.query("filename") ?? "").trim();
   const source = (c.req.query("source") ?? "").trim();
+  const section = readSongSection(c.req.query("section") ?? "");
   // The file's fingerprint (its SHA-256), worked out by the script on your
   // computer. We don't work it out again here: on Cloudflare's free plan
   // each request only gets a few milliseconds of computer time.
@@ -125,6 +129,11 @@ routes.post("/api/import/song-file", async (c) => {
   const song = await findSongByTitle(c.env.DB, title);
   if (song !== null) {
     songId = song.id;
+    // A file from a prayers folder moves its song there, e.g. when the
+    // Creed's chord chart was imported before its slides.
+    if (section === "prayers" && song.section !== "prayers") {
+      await setSongSection(c.env.DB, songId, "prayers");
+    }
   } else {
     songId = await createSong(c.env.DB, {
       title: title,
@@ -134,6 +143,7 @@ routes.post("/api/import/song-file", async (c) => {
       notes: "",
       youtubeUrl: "",
       sheetMusicUrl: "",
+      section: section,
     });
   }
 
