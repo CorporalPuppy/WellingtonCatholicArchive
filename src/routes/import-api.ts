@@ -2,8 +2,12 @@
 // The bulk import of the music library (used by tools/import_music.py).
 //
 //   GET  /api/import/done        every file already imported: one per line,
-//                                its fingerprint, a tab, then its path
+//                                fingerprint, path, song title, kind, key
+//                                and version, with a tab between each
 //   POST /api/import/song-file   upload one file (or a new copy of an edited one)
+//   POST /api/import/update      a file was renamed or moved, or its song,
+//                                kind, key or version changed: no upload needed
+//   POST /api/import/delete      a file was removed from your music folders
 //
 // These aren't pages for people. The import script sends the secret
 // IMPORT_TOKEN in an "Authorization: Bearer ..." header instead of logging
@@ -19,7 +23,10 @@
 // under Prayers and services (prayers, rosaries, special services); without
 // it, a new song goes in the music library. If this source was imported
 // before with a different fingerprint (the file was edited), the copy on
-// the site is replaced and keeps its place, kind, key and version.
+// the site is replaced, and its song, kind, key and version updated.
+//
+// A song left with no files after an update or delete is kept (it may be
+// in a set list); it shows under "Resolve now" on the admin songs page.
 // ===========================================================================
 
 import { Hono } from "hono";
@@ -27,12 +34,14 @@ import type { Context } from "hono";
 import {
   addSongFile,
   createSong,
+  deleteSongFileRecord,
   findSongByTitle,
   getImportedFiles,
   getSongFileBySourcePath,
   getStorageUsed,
   replaceSongFileContents,
   setSongSection,
+  updateImportedSongFile,
 } from "../database";
 import { makeStorageKey } from "../files";
 import { FILE_KIND_LABELS, readSongSection, workOutContentType, wouldGoOverFreeStorage } from "../helpers";
@@ -65,7 +74,83 @@ routes.use("/api/import/*", async (c, next) => {
 
 routes.get("/api/import/done", async (c) => {
   const files = await getImportedFiles(c.env.DB);
-  return c.text(files.map((file) => file.source_hash + "\t" + file.source_path).join("\n"));
+  const lines = files.map((file) =>
+    [file.source_hash, file.source_path, file.title, file.kind, file.music_key, file.version].join("\t"),
+  );
+  return c.text(lines.join("\n"));
+});
+
+/**
+ * The song with this title, or a new one. A file from a prayers folder
+ * moves its song there, e.g. when the Creed's chord chart was imported
+ * before its slides.
+ */
+async function findOrMakeSong(db: D1Database, title: string, section: "music" | "prayers"): Promise<number> {
+  const song = await findSongByTitle(db, title);
+  if (song !== null) {
+    if (section === "prayers" && song.section !== "prayers") {
+      await setSongSection(db, song.id, "prayers");
+    }
+    return song.id;
+  }
+  return await createSong(db, {
+    title: title,
+    author: "",
+    songKey: "",
+    ccliNumber: "",
+    notes: "",
+    youtubeUrl: "",
+    sheetMusicUrl: "",
+    section: section,
+  });
+}
+
+// A file was renamed or moved on your computer (source -> new_source), or
+// its title, kind, key or version changed in the spreadsheet. The file in
+// R2 stays as it is; only what we know about it changes.
+routes.post("/api/import/update", async (c) => {
+  const source = (c.req.query("source") ?? "").trim();
+  const newSource = (c.req.query("new_source") ?? source).trim();
+  const title = (c.req.query("title") ?? "").trim();
+  const kind = c.req.query("kind") ?? "";
+  const filename = (c.req.query("filename") ?? "").trim();
+  if (source === "" || newSource === "" || title === "" || filename === "" || !(kind in FILE_KIND_LABELS)) {
+    return c.text("source, title, kind and filename are all needed.", 400);
+  }
+
+  const file = await getSongFileBySourcePath(c.env.DB, source);
+  if (file === null) {
+    return c.text("Not found: " + source, 404);
+  }
+  if (newSource !== source && (await getSongFileBySourcePath(c.env.DB, newSource)) !== null) {
+    return c.text("Already on the site: " + newSource, 409);
+  }
+
+  const songId = await findOrMakeSong(c.env.DB, title, readSongSection(c.req.query("section") ?? ""));
+  await updateImportedSongFile(
+    c.env.DB,
+    file.id,
+    songId,
+    kind,
+    (c.req.query("key") ?? "").trim(),
+    (c.req.query("version") ?? "").trim(),
+    filename,
+    newSource,
+  );
+  return c.text("updated (song " + songId + ")");
+});
+
+// A file was removed from your music folders (or marked "skip"): remove it
+// from R2 and from the song.
+routes.post("/api/import/delete", async (c) => {
+  const source = (c.req.query("source") ?? "").trim();
+  const file = await getSongFileBySourcePath(c.env.DB, source);
+  if (file === null) {
+    return c.text("already gone");
+  }
+  await c.env.MUSIC.delete(file.r2_key);
+  await deleteSongFileRecord(c.env.DB, file.id);
+  return c.text("deleted from song " + file.song_id);
 });
 
 routes.post("/api/import/song-file", async (c) => {
@@ -114,37 +199,18 @@ routes.post("/api/import/song-file", async (c) => {
     return c.text("Storage full: this file would go over Cloudflare's free 10 GB.", 507);
   }
 
+  const songId = await findOrMakeSong(c.env.DB, title, section);
+
   // Edited since last time: put the new copy in R2, point the song file
-  // at it, then remove the old copy.
+  // at it (and at the right song, kind, key and version), then remove the
+  // old copy.
   if (existing !== null) {
-    const newR2Key = makeStorageKey("songs/" + existing.song_id, filename);
+    const newR2Key = makeStorageKey("songs/" + songId, filename);
     await c.env.MUSIC.put(newR2Key, body, { httpMetadata: { contentType: contentType } });
     await replaceSongFileContents(c.env.DB, existing.id, newR2Key, filename, contentType, size, hash);
+    await updateImportedSongFile(c.env.DB, existing.id, songId, kind, musicKey, version, filename, source);
     await c.env.MUSIC.delete(existing.r2_key);
-    return c.text("replaced the copy on song " + existing.song_id);
-  }
-
-  // Find the song, or make it.
-  let songId: number;
-  const song = await findSongByTitle(c.env.DB, title);
-  if (song !== null) {
-    songId = song.id;
-    // A file from a prayers folder moves its song there, e.g. when the
-    // Creed's chord chart was imported before its slides.
-    if (section === "prayers" && song.section !== "prayers") {
-      await setSongSection(c.env.DB, songId, "prayers");
-    }
-  } else {
-    songId = await createSong(c.env.DB, {
-      title: title,
-      author: "",
-      songKey: "",
-      ccliNumber: "",
-      notes: "",
-      youtubeUrl: "",
-      sheetMusicUrl: "",
-      section: section,
-    });
+    return c.text("replaced the copy on song " + songId);
   }
 
   const r2Key = makeStorageKey("songs/" + songId, filename);
@@ -162,7 +228,7 @@ routes.post("/api/import/song-file", async (c) => {
     sourceHash: hash,
   });
 
-  return c.text(song !== null ? "added to song " + songId : "made new song " + songId);
+  return c.text("added to song " + songId);
 });
 
 export default routes;

@@ -32,11 +32,15 @@ The status column:
   ok     the script is confident; this row will be uploaded
   check  the script isn't sure (the note says why). Fix the song title,
          key or version if needed, then change it to ok, or to skip.
-  skip   never uploaded (autosaves, backups, shortcuts, videos...)
+  skip   not on the site (autosaves, backups, shortcuts, videos...). If
+         it was uploaded before, "upload" offers to remove it.
 
-Running "upload" again is safe: the site remembers every file it already
-has and skips it. If you've edited a file since (a new chord chart, a
-fixed typo in the slides), the site's copy is replaced with the new one.
+"upload" makes the site match your folders, so after any change just run
+"scan" then "upload" again. Files that haven't changed are skipped. Edited
+files replace the site's copy. Renamed or moved files are moved on the site
+without being sent again. A changed title, key or version is updated. Files
+gone from your folders are listed, and removed once you type yes. Songs left
+with no files are kept, and listed under "Resolve now" on the admin songs page.
 Running "scan" again keeps the changes you made to rows in an existing
 import_plan.csv (a key, a version, a "skip", or an "ok" on a row the
 script had flagged), and adds any new files. New files are checked
@@ -165,6 +169,7 @@ def read_file_name(stem):
         (r"\(\s*null[_ ]?(\d+)\s*\)", "Part {0}"),
         (r"\bpage\s*(\d+)\b", "Page {0}"),
         (r"\bpart\s*(\d+)\b", "Part {0}"),
+        (r"\[([^\]]{2,})\]", "{0}"),  # anything in [square brackets], e.g. [Descant]
     ]
     for pattern, label in labels:
         match = re.search(pattern, text, re.IGNORECASE)
@@ -523,61 +528,171 @@ def print_total_size(rows):
 # ---------------------------------------------------------------------------
 
 def upload(plan_path, site, token):
+    """
+    Makes the site match your music folders:
+      - new files are uploaded
+      - edited files replace the site's copy
+      - renamed or moved files (same contents, new place) are moved on the
+        site without uploading them again
+      - a changed song title, kind, key or version is updated
+      - files gone from your folders (or marked "skip") are removed from
+        the site, after you say yes
+    Rows still marked "check" are left alone.
+    """
     rows = read_plan(plan_path)
-    to_upload = [row for row in rows if row["status"].strip().lower() == "ok"]
+    plan = {row["file"]: row for row in rows}
 
-    # What the site already has: each file's path and its fingerprint.
+    # What the site already has, one line per file.
     on_site = {}
     for line in ask_site(site, token, "GET", "/api/import/done").splitlines():
-        if "\t" in line:
-            fingerprint, path = line.split("\t", 1)
-            on_site[path] = fingerprint
+        parts = line.split("\t")
+        if len(parts) >= 6:
+            fingerprint, path, title, kind, key, version = parts[:6]
+            on_site[path] = {"hash": fingerprint, "title": title, "kind": kind, "key": key, "version": version}
 
-    print(len(to_upload), "rows marked ok,", len(on_site), "files already on the site.")
-    uploaded = 0
-    replaced = 0
-    failed = 0
-    for number, row in enumerate(to_upload, start=1):
+    # The files you want on the site, with their fingerprints.
+    wanted = []
+    for row in rows:
+        if row["status"].strip().lower() != "ok":
+            continue
         path = row["file"]
         if not os.path.exists(path):
-            print("  MISSING", path)
-            failed += 1
-            continue
+            continue  # gone since the last scan; dealt with below
         if os.path.getsize(path) > BIGGEST_FILE_BYTES:
             print("  TOO BIG (over 95 MB, the free plan's limit)", path)
-            failed += 1
             continue
+        row["fingerprint"] = file_fingerprint(path)
+        wanted.append(row)
 
-        with open(path, "rb") as f:
-            data = f.read()
-        fingerprint = hashlib.sha256(data).hexdigest()
-        if on_site.get(path) == fingerprint:
-            continue  # on the site already, and not edited since
+    # Files on the site that shouldn't be any more: not in the plan, marked
+    # "skip", or no longer on your computer.
+    gone = []
+    for path in on_site:
+        row = plan.get(path)
+        status = row["status"].strip().lower() if row else ""
+        if row is None or status == "skip" or not os.path.exists(path):
+            gone.append(path)
 
-        details = {
-            "title": row["song_title"].strip(),
-            "kind": row["kind"].strip(),
-            "key": row["key"].strip(),
-            "version": row["version"].strip(),
-            "filename": os.path.basename(path),
-            "source": path,
-            "hash": fingerprint,
-            "section": section_for(path),
-        }
-        try:
-            answer = ask_site(site, token, "POST", "/api/import/song-file?" + urllib.parse.urlencode(details), data)
-            print("  [" + str(number) + "/" + str(len(to_upload)) + "]", details["title"], "-", details["filename"], "-", answer)
-            if path in on_site:
-                replaced += 1
+    # Sort out what to do with each file.
+    gone_by_fingerprint = {}
+    for path in gone:
+        gone_by_fingerprint.setdefault(on_site[path]["hash"], []).append(path)
+    to_move, to_relabel, to_replace, to_add = [], [], [], []
+    for row in wanted:
+        path = row["file"]
+        site_copy = on_site.get(path)
+        if site_copy is None:
+            # Same contents as a file that's gone? Then it was renamed or moved.
+            old_paths = gone_by_fingerprint.get(row["fingerprint"])
+            if old_paths:
+                to_move.append((old_paths.pop(), row))
             else:
-                uploaded += 1
-        except RuntimeError as error:
-            print("  FAILED", path, "-", error)
-            failed += 1
+                to_add.append(row)
+        elif site_copy["hash"] != row["fingerprint"]:
+            to_replace.append(row)
+        elif labels_differ(site_copy, row):
+            to_relabel.append(row)
+    moved_from = {old_path for old_path, _ in to_move}
+    to_delete = [path for path in gone if path not in moved_from]
 
-    print("Done.", uploaded, "new,", replaced, "replaced (edited since last time),", failed, "failed.")
+    print("On the site:", len(on_site), "files. Changes:")
+    print("  new:", len(to_add), " edited:", len(to_replace), " renamed or moved:", len(to_move),
+          " new title/kind/key/version:", len(to_relabel), " to remove:", len(to_delete))
+
+    failed = 0
+    for old_path, row in to_move:
+        failed += send_update(site, token, row, old_path)
+    for row in to_relabel:
+        failed += send_update(site, token, row, row["file"])
+    for number, row in enumerate(to_replace + to_add, start=1):
+        failed += send_file(site, token, row, number, len(to_replace) + len(to_add))
+
+    if to_delete:
+        print()
+        print("These", len(to_delete), "files are on the site but gone from your folders (or marked skip):")
+        for path in to_delete[:30]:
+            print("   ", on_site[path]["title"], "-", os.path.basename(path))
+        if len(to_delete) > 30:
+            print("    ...and", len(to_delete) - 30, "more")
+        answer = input("Remove them from the site? Type yes to remove, anything else to keep: ")
+        if answer.strip().lower() == "yes":
+            for path in to_delete:
+                try:
+                    print("  ", ask_site(site, token, "POST", "/api/import/delete?" + urllib.parse.urlencode({"source": path})),
+                          "-", os.path.basename(path))
+                except RuntimeError as error:
+                    print("  FAILED", path, "-", error)
+                    failed += 1
+        else:
+            print("  Kept them. They'll be listed again next time.")
+
     if failed:
+        print("Done, but", failed, "failed.")
         print("Run the upload again to retry the failed ones.")
+    else:
+        print("Done.")
+    print("Songs left with no files show under 'Resolve now' on the site's admin songs page.")
+
+
+def file_fingerprint(path):
+    """The SHA-256 of a file's contents, read a bit at a time to save memory."""
+    sha = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1024 * 1024), b""):
+            sha.update(block)
+    return sha.hexdigest()
+
+
+def labels_differ(site_copy, row):
+    """True if you changed the song title, kind, key or version of a file."""
+    return (
+        site_copy["title"].strip().lower() != row["song_title"].strip().lower()
+        or site_copy["kind"] != row["kind"].strip()
+        or site_copy["key"] != row["key"].strip()
+        or site_copy["version"] != row["version"].strip()
+    )
+
+
+def file_details(row):
+    path = row["file"]
+    return {
+        "title": row["song_title"].strip(),
+        "kind": row["kind"].strip(),
+        "key": row["key"].strip(),
+        "version": row["version"].strip(),
+        "filename": os.path.basename(path),
+        "section": section_for(path),
+    }
+
+
+def send_update(site, token, row, old_path):
+    """Moves or relabels a file on the site, without uploading it. Returns 1 if it failed."""
+    details = file_details(row)
+    details["source"] = old_path
+    details["new_source"] = row["file"]
+    try:
+        answer = ask_site(site, token, "POST", "/api/import/update?" + urllib.parse.urlencode(details))
+        print("  ", details["title"], "-", details["filename"], "-", answer)
+        return 0
+    except RuntimeError as error:
+        print("  FAILED", row["file"], "-", error)
+        return 1
+
+
+def send_file(site, token, row, number, total):
+    """Uploads a new or edited file. Returns 1 if it failed."""
+    details = file_details(row)
+    details["source"] = row["file"]
+    details["hash"] = row["fingerprint"]
+    with open(row["file"], "rb") as f:
+        data = f.read()
+    try:
+        answer = ask_site(site, token, "POST", "/api/import/song-file?" + urllib.parse.urlencode(details), data)
+        print("  [" + str(number) + "/" + str(total) + "]", details["title"], "-", details["filename"], "-", answer)
+        return 0
+    except RuntimeError as error:
+        print("  FAILED", row["file"], "-", error)
+        return 1
 
 
 def section_for(path):
@@ -592,7 +707,9 @@ def ask_site(site, token, method, address, data=None):
     request = urllib.request.Request(site.rstrip("/") + address, data=data, method=method)
     request.add_header("Authorization", "Bearer " + token)
     request.add_header("User-Agent", "choir-music-import/1.0")
-    if data is not None:
+    if method == "POST":
+        # Always say what's being sent, even with no file: the site turns
+        # away POSTs without it (a safety check against forged web forms).
         request.add_header("Content-Type", "application/octet-stream")
     try:
         with urllib.request.urlopen(request, timeout=300) as response:

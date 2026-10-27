@@ -394,11 +394,66 @@ export async function findSongByTitle(db: D1Database, title: string): Promise<So
   return await db.prepare("SELECT * FROM songs WHERE title = ? COLLATE NOCASE").bind(title).first<SongRow>();
 }
 
-/** Every file the bulk import has already uploaded, with its fingerprint. */
-export async function getImportedFiles(db: D1Database): Promise<{ source_path: string; source_hash: string }[]> {
+export type ImportedFileRow = {
+  source_path: string;
+  source_hash: string;
+  title: string; // the song it's under
+  kind: string;
+  music_key: string;
+  version: string;
+};
+
+/**
+ * Every file the bulk import has already uploaded, with its fingerprint
+ * and where it sits on the site, so the script can spot what changed.
+ */
+export async function getImportedFiles(db: D1Database): Promise<ImportedFileRow[]> {
   const result = await db
-    .prepare("SELECT source_path, source_hash FROM song_files WHERE source_path != ''")
-    .all<{ source_path: string; source_hash: string }>();
+    .prepare(
+      `SELECT song_files.source_path, song_files.source_hash, songs.title,
+              song_files.kind, song_files.music_key, song_files.version
+       FROM song_files
+       JOIN songs ON songs.id = song_files.song_id
+       WHERE song_files.source_path != ''`,
+    )
+    .all<ImportedFileRow>();
+  return result.results;
+}
+
+/**
+ * Moves a song file to another song and/or changes its labels, e.g. after
+ * the file was renamed or moved on your computer, or you changed its title,
+ * key or version in the import spreadsheet. The file in R2 stays the same.
+ */
+export async function updateImportedSongFile(
+  db: D1Database,
+  fileId: number,
+  songId: number,
+  kind: string,
+  musicKey: string,
+  version: string,
+  filename: string,
+  sourcePath: string,
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE song_files
+       SET song_id = ?, kind = ?, music_key = ?, version = ?, filename = ?, source_path = ?
+       WHERE id = ?`,
+    )
+    .bind(songId, kind, musicKey, version, filename, sourcePath, fileId)
+    .run();
+}
+
+/** Songs with no files at all, e.g. after their files were moved or deleted. */
+export async function getSongsWithNoFiles(db: D1Database): Promise<SongRow[]> {
+  const result = await db
+    .prepare(
+      `SELECT * FROM songs
+       WHERE NOT EXISTS (SELECT 1 FROM song_files WHERE song_files.song_id = songs.id)
+       ORDER BY title COLLATE NOCASE`,
+    )
+    .all<SongRow>();
   return result.results;
 }
 

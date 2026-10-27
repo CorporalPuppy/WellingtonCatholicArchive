@@ -25,6 +25,7 @@ import {
   getSongFile,
   getSongFiles,
   getSongs,
+  getSongsWithNoFiles,
   getStorageUsed,
   replaceSongFileContents,
   updateSong,
@@ -116,6 +117,8 @@ function SongForm(props: { action: string; song?: SongRow; section?: string; but
 // ---------------------------------------------------------------------------
 routes.get("/admin/songs", async (c) => {
   const songs = await getSongs(c.env.DB, "");
+  const emptySongs = await getSongsWithNoFiles(c.env.DB);
+  const lookalikes = findLookalikeTitles(songs);
   const sections = [
     { section: "music", heading: "Music library" },
     { section: "prayers", heading: "Prayers and services" },
@@ -130,6 +133,48 @@ routes.get("/admin/songs", async (c) => {
         <a class="button" href="/admin/songs/new">Add a song</a>{" "}
         <a class="button button-secondary" href="/admin/songs/new?section=prayers">Add a prayer or service</a>
       </p>
+      {(emptySongs.length > 0 || lookalikes.length > 0) && (
+        <section class="resolve-now">
+          <h2>Resolve now</h2>
+          {emptySongs.length > 0 && (
+            <>
+              <h3>Songs with no files</h3>
+              <p class="muted">
+                Usually left behind when files were renamed, moved to another song or deleted from your music
+                folders. Open one to add files, or delete it if you don't need it.
+              </p>
+              <ul class="song-list">
+                {emptySongs.map((song) => (
+                  <li><a href={"/admin/songs/" + song.id}>{song.title}</a></li>
+                ))}
+              </ul>
+            </>
+          )}
+          {lookalikes.length > 0 && (
+            <>
+              <h3>Songs that may be the same</h3>
+              <p class="muted">
+                These titles only differ in capitals or punctuation. If they're the same song, put one spelling
+                under the other's other_spellings in song_list.csv and run the import again: the files move to
+                one song and the other ends up under "Songs with no files".
+              </p>
+              <ul class="song-list">
+                {lookalikes.map((group) => (
+                  <li>
+                    {group.map((song, index) => (
+                      <>
+                        {index > 0 && " / "}
+                        <a href={"/admin/songs/" + song.id}>{song.title}</a>
+                      </>
+                    ))}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
+      )}
+
       {songs.length === 0 && <p>No songs yet.</p>}
       {sections.map((group) => {
         const songsInSection = songs.filter((song) => song.section === group.section);
@@ -153,6 +198,20 @@ routes.get("/admin/songs", async (c) => {
     </>,
   );
 });
+
+/**
+ * Groups of songs whose titles are the same apart from capitals,
+ * punctuation and spaces, e.g. "Hark! The Herald" and "Hark the Herald".
+ */
+function findLookalikeTitles(songs: SongRow[]): SongRow[][] {
+  const groups = new Map<string, SongRow[]>();
+  for (const song of songs) {
+    // normalize("NFD") splits "ō" into "o" plus a macron, which we drop.
+    const plain = song.title.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    groups.set(plain, [...(groups.get(plain) ?? []), song]);
+  }
+  return [...groups.values()].filter((group) => group.length > 1);
+}
 
 // ---------------------------------------------------------------------------
 // New song

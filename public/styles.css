@@ -741,6 +741,16 @@ details.file-section[open] > summary::before { transform: rotate(45deg); }
   color: var(--accent);
   background: var(--accent-soft);
 }
+/* "Resolve now" box at the top of the admin songs page. */
+.resolve-now {
+  margin: 16px 0 24px;
+  padding: 4px 18px 12px;
+  border: 1px solid var(--gold);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.resolve-now h3 { margin-top: 14px; }
+
 /* The "Replace" box under each file on a song's admin page. */
 details.replace-file { margin-top: 4px; font-size: 0.9rem; }
 details.replace-file summary { cursor: pointer; color: var(--accent); }

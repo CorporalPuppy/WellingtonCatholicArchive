@@ -397,12 +397,20 @@ need. For example: `Amazing Grace - Key of G.pdf`,
 exactly as in `song_list.csv`, and give each copy its own version
 (`v2`, `Capo 3`, `Page 2`) rather than Windows' "(2)" or "- Copy".
 
-Running either step again is safe: `scan` keeps what you changed in the
-spreadsheet, and `upload` skips files the site already has. If you've
-edited a file on your computer since it was uploaded, `upload` replaces the
-site's copy with the new one (it compares a "fingerprint" of each file's
-contents). So to update the site after changing your music, just run
-`scan` and `upload` again.
+Running either step again is safe. After any change to your music, just run
+`scan` then `upload` again, and `upload` makes the site match your folders:
+
+- unchanged files are skipped
+- edited files replace the site's copy (it compares a "fingerprint" of each
+  file's contents)
+- renamed or moved files are moved on the site without being sent again
+- a changed song title, key or version (in either spreadsheet) is updated
+- files gone from your folders, or marked `skip`, are listed, and removed
+  from the site once you type `yes`
+
+Songs left with no files are kept, in case they're in a set list. They show
+under **Resolve now** at the top of the admin songs page, together with
+songs whose titles differ only in capitals or punctuation.
 
 To change a single file by hand, use **Replace** under that file on the
 song's admin page. It keeps the file's kind, key and version. Your music
