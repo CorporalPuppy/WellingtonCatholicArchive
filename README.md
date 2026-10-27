@@ -351,15 +351,36 @@ libraries.
 
 1. Make up a long random import code and give it to the site (once):
    `npx wrangler secret put IMPORT_TOKEN`
-2. Scan your folder. This only reads file names and writes `import_plan.csv`:
+2. Scan your folder. This only reads file names:
    `python tools/import_music.py scan "C:\Users\Elijah\Documents\Music"`
-3. Open `import_plan.csv` in Excel. Each row is one file, with the song it
-   belongs to, its kind, key and version. Rows marked `check` say why in the
-   `note` column: fix the title, key or version, then change `check` to `ok`
-   (or `skip`). Save it as **CSV UTF-8** so letters like ō survive.
-4. Upload every `ok` row:
+   The first time, it writes **`song_list.csv`**, your list of songs, as
+   well as `import_plan.csv`.
+3. Tidy `song_list.csv` in Excel. It has one row per song: `title` is the
+   proper name and `other_spellings` lists other ways file names write it
+   (put `;` between several). Where two rows are the same song (the `note`
+   column points out likely ones, such as "Let My Tounge Be Silenced" and
+   "Let My Tongue Be Silenced"), keep one, add the other spelling to it and
+   delete the other row. `found_in` shows which kinds of file each song
+   has (just for your information: a song with only chords is fine). The script never changes this file again, so your fixes stick.
+4. Scan again. Now every file is checked against your song list, and any
+   file that doesn't match a song on it is marked `check`. New songs later
+   just need a row in the list.
+5. Open `import_plan.csv` in Excel. Each row is one file, with the song it
+   belongs to, its kind, key, version and which kinds its song has. Rows
+   marked `check` say why in the `note` column: fix the song list or the
+   row, then change `check` to `ok` (or `skip`). Save both files as
+   **CSV UTF-8** so letters like ō survive.
+6. Upload every `ok` row:
    `python tools/import_music.py upload --site https://your-site`
    It asks for the import code. Songs that don't exist yet are created.
+
+**Naming new files.** Keep each file in the folder for its type, and name
+it `Song Title - Key of X - Version`, leaving out the parts you don't
+need. For example: `Amazing Grace - Key of G.pdf`,
+`Amazing Grace - Key of A - with intro.mscz`, `Silent Night - Page 2.jpg`,
+`Psalm 23 - The Lord Is My Shepherd - Key of D.docx`. Spell the title
+exactly as in `song_list.csv`, and give each copy its own version
+(`v2`, `Capo 3`, `Page 2`) rather than Windows' "(2)" or "- Copy".
 
 Running either step again is safe: `scan` keeps what you changed in the
 spreadsheet, and `upload` skips files the site already has. If you've

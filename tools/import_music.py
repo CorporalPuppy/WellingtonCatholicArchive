@@ -1,15 +1,27 @@
 """
 Bulk import of the music library into the choir website.
 
-It works in two steps, so nothing is uploaded until you've checked it:
+It works in steps, so nothing is uploaded until you've checked it:
 
-  1. SCAN: read your music folder and write a spreadsheet (a CSV file)
-     with one row per file: the song it belongs to, what kind of file it
-     is, its key and version, and a status.
+  1. SCAN: read your music folder and write two spreadsheets (CSV files):
 
          python import_music.py scan "C:\\Users\\Elijah\\Documents\\Music"
 
-  2. UPLOAD: open import_plan.csv in Excel, fix anything marked "check",
+     song_list.csv   your list of songs: one row per song, with its proper
+                     title and any other spellings used in file names.
+                     Made the first time you scan; after that it's yours
+                     to keep tidy, and the script never changes it.
+     import_plan.csv one row per file: the song it belongs to, what kind
+                     of file it is, its key and version, and a status.
+
+  2. TIDY THE SONG LIST: open song_list.csv in Excel. Where two rows are
+     the same song spelt differently, keep one, add the other spelling to
+     its other_spellings column (several spellings: put ; between them),
+     and delete the other row. The note column points out likely ones.
+     Save, then run scan again. Every file is now checked against your
+     list, and any file that doesn't match a song on it is marked "check".
+
+  3. UPLOAD: open import_plan.csv in Excel, fix anything marked "check",
      save it, then upload every row marked "ok".
 
          python import_music.py upload --site https://your-choir-site
@@ -26,7 +38,9 @@ Running "upload" again is safe: the site remembers every file it already
 has and skips it. If you've edited a file since (a new chord chart, a
 fixed typo in the slides), the site's copy is replaced with the new one.
 Running "scan" again keeps the changes you made to rows in an existing
-import_plan.csv, and adds any new files.
+import_plan.csv (a key, a version, a "skip", or an "ok" on a row the
+script had flagged), and adds any new files. New files are checked
+against song_list.csv, so a new song needs a row there.
 
 Only Python's built-in libraries are used, so there is nothing to install.
 """
@@ -44,12 +58,14 @@ import urllib.parse
 import urllib.request
 
 PLAN_FILE = "import_plan.csv"
+SONG_LIST_FILE = "song_list.csv"
 
 # Cloudflare's free plan takes at most 100 MB in one upload. We stop a
 # little below that, at 95 MB, to leave room.
 BIGGEST_FILE_BYTES = 95_000_000
 
-COLUMNS = ["status", "song_title", "kind", "key", "version", "note", "file"]
+COLUMNS = ["status", "song_title", "kind", "key", "version", "found_in", "note", "file"]
+SONG_LIST_COLUMNS = ["title", "other_spellings", "found_in", "note"]
 
 # ---------------------------------------------------------------------------
 # Your folders. Each folder name (the first folder under the music folder)
@@ -142,6 +158,8 @@ def read_file_name(stem):
         (r"\bchanted\b", "Chanted"),
         (r"\bacoustic\b", "Acoustic"),
         (r"\(\s*null[_ ]?(\d+)\s*\)", "Part {0}"),
+        (r"\bpage\s*(\d+)\b", "Page {0}"),
+        (r"\bpart\s*(\d+)\b", "Part {0}"),
     ]
     for pattern, label in labels:
         match = re.search(pattern, text, re.IGNORECASE)
@@ -208,12 +226,11 @@ def scan(music_folder):
         if row["status"] != "skip" and os.path.getsize(row["file"]) > BIGGEST_FILE_BYTES:
             row["status"] = "skip"
             row["note"] = "too big: Cloudflare's free plan takes files up to 95 MB"
-    rows.sort(key=lambda row: (row["status"] != "check", row["song_title"].lower(), row["kind"]))
     return rows
 
 
 def make_row(path, filename, folder_kind, folder_version):
-    row = {"status": "ok", "song_title": "", "kind": "", "key": "", "version": "", "note": "", "file": path}
+    row = {"status": "ok", "song_title": "", "kind": "", "key": "", "version": "", "found_in": "", "note": "", "file": path}
 
     # Word and PowerPoint leave hidden "~$" files behind while a file is open.
     if filename.startswith("~$") or filename.startswith("."):
@@ -259,6 +276,7 @@ def make_row(path, filename, folder_kind, folder_version):
         versions.append(folder_version)
 
     row["song_title"] = title
+    row["raw_title"] = title
     row["key"] = key
     row["version"] = ", ".join(versions)
 
@@ -283,8 +301,10 @@ def group_songs(rows):
     for group in groups.values():
         best = max(group, key=lambda row: (count_title(group, row["song_title"]), -title_rank(row["kind"])))
         best_title = best["song_title"]
+        found_in = describe_kinds(group)
         for row in group:
             row["song_title"] = best_title
+            row["found_in"] = found_in
 
     # Look for near misses: titles only a letter or two apart, which is
     # usually a typo, e.g. "The Litte Drummer Boy" vs "The Little Drummer Boy".
@@ -302,6 +322,24 @@ def group_songs(rows):
                     row["status"] = "check"
                     row["note"] = 'probably the same song as "' + other_title + '": give both the same title, or leave it'
             break
+
+
+def describe_kinds(group):
+    """Which kinds of file a song has, e.g. "sheet, chords, slides"."""
+    kinds = {row["kind"] for row in group}
+    return ", ".join(kind for kind in TITLE_PREFERENCE + ["other"] if kind in kinds)
+
+
+def refresh_found_in(rows):
+    """Works out found_in again once every file has its final song title."""
+    by_song = {}
+    for row in rows:
+        if row["status"] != "skip":
+            by_song.setdefault(row["song_title"], []).append(row)
+    for group in by_song.values():
+        found_in = describe_kinds(group)
+        for row in group:
+            row["found_in"] = found_in
 
 
 def is_probably_typo(a, b):
@@ -328,34 +366,138 @@ def title_rank(kind):
     return len(TITLE_PREFERENCE)
 
 
-def keep_earlier_edits(rows, plan_path):
-    """If a plan already exists, keep what you typed in it for each file."""
+# ---------------------------------------------------------------------------
+# Your song list
+# ---------------------------------------------------------------------------
+
+def read_song_list(list_path):
+    """
+    Reads song_list.csv into a lookup from every spelling (simplified with
+    match_key) to the song's proper title.
+    """
+    lookup = {}
+    for song in read_csv(list_path):
+        title = (song.get("title") or "").strip()
+        if title == "":
+            continue
+        spellings = [title] + (song.get("other_spellings") or "").split(";")
+        for spelling in spellings:
+            if spelling.strip() != "":
+                lookup[match_key(spelling)] = title
+    return lookup
+
+
+def check_against_song_list(rows, songs):
+    """
+    Gives each file the proper title from your song list. A file that
+    doesn't match any song on the list is marked "check".
+    """
+    for row in rows:
+        if row["status"] == "skip":
+            continue
+        title = songs.get(match_key(row["song_title"]))
+        if title is not None:
+            row["song_title"] = title
+            # Your list decides which songs are the same, so "probably the
+            # same song as..." no longer applies.
+            if row["note"].startswith("probably the same song"):
+                row["status"] = "ok"
+                row["note"] = ""
+        else:
+            row["status"] = "check"
+            hint = row["note"]
+            row["note"] = "not on song_list.csv: add it there (or as another spelling of a song), then scan again"
+            if hint:
+                row["note"] += "; " + hint
+
+
+def write_first_song_list(rows, list_path):
+    """
+    Makes song_list.csv from the files the first time you scan: one row per
+    song, with the other spellings the script grouped under it and notes
+    on rows worth a look.
+    """
+    songs = {}
+    for row in rows:
+        if row["status"] == "skip":
+            continue
+        song = songs.setdefault(row["song_title"], {"spellings": set(), "found_in": row["found_in"], "notes": set()})
+        spelling = row["raw_title"]
+        if spelling != row["song_title"]:
+            song["spellings"].add(spelling)
+        if row["note"].startswith("probably the same song"):
+            song["notes"].add(row["note"].split(":")[0])
+        elif row["note"].startswith("name too short"):
+            song["notes"].add(row["note"])
+
+    with open(list_path, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=SONG_LIST_COLUMNS)
+        writer.writeheader()
+        for title in sorted(songs, key=str.lower):
+            song = songs[title]
+            # A song with only some kinds of file (e.g. just chords) is
+            # normal, so that isn't noted; found_in still shows it.
+            notes = sorted(song["notes"])
+            writer.writerow({
+                "title": title,
+                "other_spellings": "; ".join(sorted(song["spellings"])),
+                "found_in": song["found_in"],
+                "note": "; ".join(notes),
+            })
+    return len(songs)
+
+
+def keep_earlier_edits(rows, plan_path, songs):
+    """
+    If a plan already exists, keep what you changed in it for each file:
+    its kind, key and version, a "skip", and an "ok" on a row the script
+    had flagged for the same reason as now.
+    """
     if not os.path.exists(plan_path):
         return rows
     earlier = {row["file"]: row for row in read_plan(plan_path)}
     for row in rows:
-        if row["file"] in earlier:
-            row.update(earlier[row["file"]])
+        old = earlier.get(row["file"])
+        if old is None:
+            continue
+        for column in ("kind", "key", "version"):
+            row[column] = old.get(column, row[column])
+        old_status = (old.get("status") or "").strip().lower()
+        if old_status == "skip":
+            row["status"] = "skip"
+        elif old_status == "ok" and row["status"] == "check" and old.get("note") == row["note"]:
+            row["status"] = "ok"
+        # A title you typed in the plan is kept if it's on your song list.
+        old_title = (old.get("song_title") or "").strip()
+        if old_title != row["song_title"] and match_key(old_title) in songs:
+            row["song_title"] = songs[match_key(old_title)]
+            if row["note"].startswith("not on song_list.csv"):
+                row["status"] = "ok" if old_status == "ok" else row["status"]
+                row["note"] = ""
     return rows
 
 
 def write_plan(rows, plan_path):
     # "utf-8-sig" lets Excel show letters like ō correctly.
     with open(plan_path, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=COLUMNS)
+        writer = csv.DictWriter(f, fieldnames=COLUMNS, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 
 
 def read_plan(plan_path):
+    return read_csv(plan_path)
+
+
+def read_csv(path):
     # Excel may save the file as UTF-8 or as the older Windows encoding.
     for encoding in ("utf-8-sig", "cp1252"):
         try:
-            with open(plan_path, newline="", encoding=encoding) as f:
+            with open(path, newline="", encoding=encoding) as f:
                 return list(csv.DictReader(f))
         except UnicodeDecodeError:
             continue
-    sys.exit("Couldn't read " + plan_path + ". In Excel, save it as 'CSV UTF-8'.")
+    sys.exit("Couldn't read " + path + ". In Excel, save it as 'CSV UTF-8'.")
 
 
 def print_total_size(rows):
@@ -460,6 +602,7 @@ def main():
     scan_step = steps.add_parser("scan", help="read the music folder and write the spreadsheet")
     scan_step.add_argument("folder", help="the music folder, holding 'Music Chords', 'Scores' and so on")
     scan_step.add_argument("--plan", default=PLAN_FILE)
+    scan_step.add_argument("--songs", default=SONG_LIST_FILE, help="your song list (made on the first scan)")
 
     upload_step = steps.add_parser("upload", help="upload every row marked ok")
     upload_step.add_argument("--site", required=True, help="e.g. https://ourchoir.nz")
@@ -468,7 +611,17 @@ def main():
     args = parser.parse_args()
 
     if args.step == "scan":
-        rows = keep_earlier_edits(scan(args.folder), args.plan)
+        rows = scan(args.folder)
+        first_time = not os.path.exists(args.songs)
+        if first_time:
+            count = write_first_song_list(rows, args.songs)
+            songs = {}
+        else:
+            songs = read_song_list(args.songs)
+            check_against_song_list(rows, songs)
+        rows = keep_earlier_edits(rows, args.plan, songs)
+        refresh_found_in(rows)
+        rows.sort(key=lambda row: (row["status"] != "check", row["song_title"].lower(), row["kind"]))
         write_plan(rows, args.plan)
         counts = {}
         for row in rows:
@@ -478,7 +631,12 @@ def main():
         print_total_size(rows)
         for status in ("ok", "check", "skip"):
             print("  " + status + ":", counts.get(status, 0))
-        print('Open it in Excel, sort out the "check" rows, save, then run "upload".')
+        if first_time:
+            print("Also wrote", args.songs, "-", count, "songs. Tidy it first (see its note column),")
+            print('save it, then run "scan" again: every file will then be checked against it.')
+        else:
+            print("Checked every file against", args.songs + ".")
+            print('Open', args.plan, 'in Excel, sort out the "check" rows, save, then run "upload".')
     else:
         token = os.environ.get("IMPORT_TOKEN") or getpass.getpass("Import token: ")
         upload(args.plan, args.site, token)
