@@ -1148,3 +1148,7 @@ canvas.score-cover-preview.shown { opacity: 0.22; }
   .song-actions { justify-content: center; }
   .song-listen { flex-direction: column; align-items: stretch; gap: 6px; }
 }
+
+/* ---- PowerPoints filed by occasion ---- */
+.occasion { margin-top: 14px; }
+.occasion-heading { font-size: 1rem; font-weight: 650; margin: 0 0 8px; }

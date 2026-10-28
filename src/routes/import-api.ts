@@ -12,14 +12,16 @@
 //   POST /api/import/song-tags   ?title=&tags= sets a song's tags (from the
 //                                tags column of song_list.csv)
 //
-// And the same four for Sunday and service PowerPoints (used by
-// tools/import_slides.py). These go in the PowerPoint archive, under the
-// date they were used, so they show on that day's events:
+// And the same for Sunday and service PowerPoints (used by
+// tools/import_slides.py). These go in the PowerPoint archive, filed by
+// Year (cycle=A, B or C) and occasion (e.g. "15th Sunday in Ordinary
+// Time"), so they show on that Sunday's events every three years. A date is
+// optional, for one-off services. No occasion = other services.
 //
-//   GET  /api/import/slides/done     fingerprint, path, title, date, church
-//                                    and the fingerprint of its words
-//   POST /api/import/slides/file     ?title=&date=&church=&filename=&source=&hash=
-//   POST /api/import/slides/update   ?source=&new_source=&title=&date=&church=&filename=
+//   GET  /api/import/slides/done     fingerprint, path, title, date, church,
+//                                    fingerprint of its words, cycle, occasion
+//   POST /api/import/slides/file     ?title=&cycle=&occasion=&date=&church=&filename=&source=&hash=
+//   POST /api/import/slides/update   ?source=&new_source=&title=&cycle=&occasion=&date=&church=&filename=
 //   POST /api/import/slides/delete   ?source=
 //   POST /api/import/slides/words    ?source=&hash= with the words on its
 //                                    slides as the body, for searching
@@ -67,6 +69,7 @@ import {
   setSongSection,
   updateImportedSongFile,
 } from "../database";
+import type { PowerpointFiling } from "../database";
 import { makeStorageKey } from "../files";
 import { FILE_KIND_LABELS, readSongSection, tidyTags, workOutContentType, wouldGoOverFreeStorage } from "../helpers";
 import type { AppEnv } from "../types";
@@ -281,6 +284,16 @@ function readDate(text: string | undefined): string {
   return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : "";
 }
 
+/** The church, Year and occasion from the address. */
+function readFiling(c: Context<AppEnv>): PowerpointFiling {
+  const cycle = (c.req.query("cycle") ?? "").trim().toUpperCase();
+  return {
+    church: (c.req.query("church") ?? "").trim(),
+    cycle: ["A", "B", "C"].includes(cycle) ? cycle : "",
+    occasion: (c.req.query("occasion") ?? "").trim(),
+  };
+}
+
 routes.get("/api/import/slides/done", async (c) => {
   const powerpoints = await getImportedPowerpoints(c.env.DB);
   const lines = powerpoints.map((powerpoint) =>
@@ -291,21 +304,23 @@ routes.get("/api/import/slides/done", async (c) => {
       powerpoint.service_date,
       powerpoint.church,
       powerpoint.text_hash,
+      powerpoint.cycle,
+      powerpoint.occasion,
     ].join("\t"),
   );
   return c.text(lines.join("\n"));
 });
 
-// Renamed or moved on your computer, or a new title or date in the
-// spreadsheet. The file in R2 stays as it is.
+// Renamed or moved on your computer, or a new title, Year, occasion, date
+// or church in the spreadsheet. The file in R2 stays as it is.
 routes.post("/api/import/slides/update", async (c) => {
   const source = (c.req.query("source") ?? "").trim();
   const newSource = (c.req.query("new_source") ?? source).trim();
   const title = (c.req.query("title") ?? "").trim();
   const date = readDate(c.req.query("date"));
   const filename = (c.req.query("filename") ?? "").trim();
-  if (source === "" || newSource === "" || title === "" || date === "" || filename === "") {
-    return c.text("source, title, date (YYYY-MM-DD) and filename are all needed.", 400);
+  if (source === "" || newSource === "" || title === "" || filename === "") {
+    return c.text("source, title and filename are all needed.", 400);
   }
 
   const powerpoint = await getPowerpointBySourcePath(c.env.DB, source);
@@ -315,8 +330,7 @@ routes.post("/api/import/slides/update", async (c) => {
   if (newSource !== source && (await getPowerpointBySourcePath(c.env.DB, newSource)) !== null) {
     return c.text("Already on the site: " + newSource, 409);
   }
-  const church = (c.req.query("church") ?? "").trim();
-  await updateImportedPowerpoint(c.env.DB, powerpoint.id, title, date, church, filename, newSource);
+  await updateImportedPowerpoint(c.env.DB, powerpoint.id, title, date, readFiling(c), filename, newSource);
   return c.text("updated");
 });
 
@@ -337,14 +351,14 @@ routes.post("/api/import/slides/file", async (c) => {
   const date = readDate(c.req.query("date"));
   const filename = (c.req.query("filename") ?? "").trim();
   const source = (c.req.query("source") ?? "").trim();
-  const church = (c.req.query("church") ?? "").trim();
+  const filing = readFiling(c);
   // Worked out by the script, as for song files above.
   let hash = (c.req.query("hash") ?? "").trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(hash)) {
     hash = "";
   }
-  if (title === "" || date === "" || filename === "" || source === "") {
-    return c.text("title, date (YYYY-MM-DD), filename and source are all needed.", 400);
+  if (title === "" || filename === "" || source === "") {
+    return c.text("title, filename and source are all needed.", 400);
   }
 
   const existing = await getPowerpointBySourcePath(c.env.DB, source);
@@ -371,7 +385,7 @@ routes.post("/api/import/slides/file", async (c) => {
   // Edited since last time: point it at the new copy, then remove the old one.
   if (existing !== null) {
     await replacePowerpointContents(c.env.DB, existing.id, r2Key, contentType, size, hash);
-    await updateImportedPowerpoint(c.env.DB, existing.id, title, date, church, filename, source);
+    await updateImportedPowerpoint(c.env.DB, existing.id, title, date, filing, filename, source);
     await c.env.MUSIC.delete(existing.r2_key);
     return c.text("replaced the copy on the site");
   }
@@ -388,7 +402,7 @@ routes.post("/api/import/slides/file", async (c) => {
       contentType: contentType,
       size: size,
     },
-    church,
+    filing,
     source,
     hash,
   );

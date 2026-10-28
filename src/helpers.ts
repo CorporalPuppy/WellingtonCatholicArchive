@@ -96,13 +96,13 @@ export function addDays(date: string, days: number): string {
 }
 
 /** The first Sunday of Advent in this calendar year: four Sundays before Christmas. */
-function firstSundayOfAdvent(year: number): string {
+export function firstSundayOfAdvent(year: number): string {
   const christmasWeekday = new Date(Date.UTC(year, 11, 25)).getUTCDay(); // 0 is Sunday
   return addDays(year + "-12-25", -(christmasWeekday === 0 ? 7 : christmasWeekday) - 21);
 }
 
 /** Easter Sunday, "YYYY-MM-DD" (the usual calculation for the Western church). */
-function easterSunday(year: number): string {
+export function easterSunday(year: number): string {
   const a = year % 19;
   const b = Math.floor(year / 100);
   const c = year % 100;

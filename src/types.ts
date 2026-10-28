@@ -107,6 +107,8 @@ export type PowerpointRow = {
   source_path: string; // where the bulk import found it ("" if uploaded by hand)
   source_hash: string; // its fingerprint when imported
   church: string; // the church it was made for ("" if not known)
+  cycle: string; // "A", "B" or "C" (Year of the Sunday readings), or ""
+  occasion: string; // e.g. "15th Sunday in Ordinary Time" (see src/liturgy.ts), or "" for other services
   text_hash: string; // fingerprint of the words on its slides (the words themselves aren't loaded)
   snippet?: string; // search results only: words from the slides around the match
 };
