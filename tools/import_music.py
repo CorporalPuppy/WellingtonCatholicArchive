@@ -27,16 +27,15 @@ It works in steps, so nothing is uploaded until you've checked it:
 
          python import_music.py scan "C:\\Users\\Elijah\\Documents\\Music" --suggest-tags
 
-     Each song on your list is looked up on hymnary.org, which knows how
-     hymnals file it (Mary, Easter, Communion...). Each song is looked up
-     only once (the answers are kept in hymnary_cache.json), slowly, so the
-     first time takes a while; later scans only look up new songs. The
+     Each song's title, and the words in its slides, lyrics and chord
+     files (.pptx, .odp, .docx, .odt, .cho), are checked for words such
+     as Mary, manger, risen or "bread of life" (TAG_WORDS, further down,
+     lists them; add your own). Nothing is looked up online. The
      suggestions go in tag_suggestions.csv: put "yes" in its approve
      column for the ones you want (edit the tags first if you like), or
      "no" to turn one down. "upload" adds the approved tags to the site.
-     Your song_list.csv isn't changed. Songs not in hymnals (most modern
-     worship songs) won't be found, and hymnary.org has nothing on style
-     (pop, rock...), so those tags are still yours to add.
+     Your song_list.csv isn't changed. Style tags (pop, rock...) are
+     still yours to add.
 
   3. UPLOAD: open import_plan.csv in Excel, fix anything marked "check",
      save it, then upload every row marked "ok".
@@ -71,15 +70,14 @@ import csv
 import difflib
 import getpass
 import hashlib
-import io
-import json
+import html
 import os
 import re
 import sys
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 
 PLAN_FILE = "import_plan.csv"
 SONG_LIST_FILE = "song_list.csv"
@@ -486,209 +484,100 @@ def add_tags_column(list_path):
 
 
 # ---------------------------------------------------------------------------
-# Tag suggestions from hymnary.org (scan --suggest-tags)
+# Tag suggestions from each song's words (scan --suggest-tags)
 # ---------------------------------------------------------------------------
 
 SUGGESTIONS_FILE = "tag_suggestions.csv"
-HYMNARY_CACHE_FILE = "hymnary_cache.json"
-SUGGESTION_COLUMNS = ["approve", "title", "suggested_tags", "your_tags", "why", "hymnary_match", "hymnary_link"]
+SUGGESTION_COLUMNS = ["approve", "title", "suggested_tags", "your_tags", "why"]
 
-HYMNARY = "https://hymnary.org"
-# Seconds to wait between requests, so hymnary.org isn't hammered.
-HYMNARY_PAUSE = 3
-
-# Hymnals on hymnary.org list each hymn under subjects such as
-# "Blessed Virgin Mary" or "Eucharist | Communion". A subject containing
-# any of these words suggests the tag on the left. Add your own here.
+# Words in a song's title or lyrics that suggest the tag on the left.
+# Lower case; each is matched as whole words. Add your own here.
 TAG_WORDS = {
-    "Marian": ["mary", "marian", "blessed virgin", "rosary", "assumption", "immaculate", "mother of god", "annunciation", "our lady"],
-    "Advent": ["advent"],
-    "Christmas": ["christmas", "nativity", "incarnation", "holy family"],
-    "Epiphany": ["epiphany"],
-    "Lent": ["lent", "lenten", "ash wednesday"],
-    "Holy Week": ["holy week", "palm sunday", "passion sunday", "holy thursday", "good friday", "triduum"],
-    "Easter": ["easter", "resurrection"],
-    "Pentecost": ["pentecost"],
-    "Holy Spirit": ["holy spirit"],
-    "Communion": ["communion", "eucharist", "lord's supper", "body and blood", "corpus christi"],
-    "Entrance": ["gathering", "entrance", "opening hymn"],
-    "Sending": ["sending forth", "recessional", "dismissal", "closing hymn"],
-    "Christ the King": ["christ the king"],
-    "Saints": ["all saints", "saints"],
-    "Baptism": ["baptism"],
-    "Wedding": ["marriage", "wedding"],
-    "Funeral": ["funeral"],
-    "Thanksgiving": ["thanksgiving"],
+    "Marian": ["mary", "maria", "ave", "virgin", "queen of heaven", "regina", "magnificat",
+               "rosary", "mother of god", "our lady", "full of grace"],
+    "Advent": ["advent", "emmanuel", "prepare the way", "maranatha", "come lord jesus"],
+    "Christmas": ["christmas", "bethlehem", "manger", "noel", "nowell", "shepherds",
+                  "christ is born", "jesus is born", "newborn king", "silent night"],
+    "Lent": ["lent", "forty days", "ashes", "ash wednesday"],
+    "Holy Week": ["hosanna", "palms", "calvary", "golgotha", "crucified", "were you there"],
+    "Easter": ["easter", "risen", "resurrection", "empty tomb", "rolled away", "rose again"],
+    "Holy Spirit": ["holy spirit", "spirit of god", "veni creator", "pentecost", "tongues of fire"],
+    "Communion": ["bread of life", "body of christ", "blood of christ", "eat this bread", "one bread",
+                  "the bread", "this bread", "the cup", "eucharist", "communion", "taste and see",
+                  "panis angelicus", "table of the lord", "living bread"],
+    "Funeral": ["funeral", "eternal rest", "requiem"],
+    "Wedding": ["wedding", "marriage"],
 }
 
-# A tag is suggested when at least this many hymnals, and at least this
-# share of the hymnals that give subjects, file the song under it. One
-# hymnal's long list of subjects isn't enough on its own.
-FEWEST_HYMNALS = 2
-SMALLEST_SHARE = 0.25
+# A tag is suggested when one of its words is in the title, or when its
+# words come up at least this many times in the song's files.
+FEWEST_MENTIONS = 2
 
-# Labels hymnary.org puts before each detail of a hymn or a hymnal's copy of it.
-HYMNARY_LABELS = [
-    "Display Title", "First Line", "Refrain First Line", "Title", "Latin Title", "Tune Title",
-    "Author", "Translator", "Composer", "Arranger", "Meter", "Date", "Subject", "Topics",
-    "Source", "Scripture", "Language", "Languages", "Copyright", "Notes", "Tune Key",
-    "Tune Information", "Text Information", "Incipit", "Page Scans", "Full Text",
-]
+# Kinds of file whose words are read: the words of the song, not the notes.
+WORD_KINDS = {"slides", "lyrics", "chords"}
 
 
-def ask_hymnary(path):
-    """Fetches a page from hymnary.org, pausing first. Retries once if asked to slow down."""
-    for attempt in (1, 2):
-        time.sleep(HYMNARY_PAUSE)
-        request = urllib.request.Request(HYMNARY + path, headers={
-            "User-Agent": "Choir song list tagger (one lookup per song, cached)",
-        })
-        try:
-            with urllib.request.urlopen(request, timeout=60) as response:
-                return response.read().decode("utf-8", "replace")
-        except urllib.error.HTTPError as error:
-            if error.code == 404:
-                return ""
-            if error.code in (429, 503) and attempt == 1:
-                print("  hymnary.org asked us to slow down; waiting a minute.")
-                time.sleep(60)
-                continue
-            raise RuntimeError("hymnary.org answered " + str(error.code))
-        except urllib.error.URLError as error:
-            raise RuntimeError("couldn't reach hymnary.org: " + str(error.reason))
-    raise RuntimeError("hymnary.org is busy; try again later")
-
-
-def find_on_hymnary(title):
+def words_in_file(path):
     """
-    Searches hymnary.org for the title. Returns (its title there, its page
-    path such as "/text/hail_holy_queen_enthroned_above_o_mar"), or None.
-    Only a close match on the title counts.
+    The words in a song file on your computer: .pptx, .odp, .docx, .odt,
+    .cho and .chordpro. Other types (PDFs, old .ppt and .doc) give "".
     """
-    query = urllib.parse.urlencode({"qu": title + " in:texts", "export": "csv"})
-    found = list(csv.DictReader(io.StringIO(ask_hymnary("/search?" + query))))
-    wanted = match_key(re.sub(r"\(.*?\)", "", title))
-    best, best_score = None, 0.85  # anything less alike isn't the same song
-    for row in found:  # most likely first
-        number = (row.get("textAuthNumber") or "").strip()
-        if not number:
+    ending = os.path.splitext(path)[1].lower()
+    try:
+        if ending in (".cho", ".chordpro"):
+            with open(path, encoding="utf-8", errors="replace") as f:
+                text = re.sub(r"\[[^\]]*\]|\{[^}]*\}", " ", f.read())  # no [G] chords or {title:}
+            return text
+        inside = {".pptx": r"ppt/slides/slide\d+\.xml$", ".docx": r"word/document\.xml$",
+                  ".odp": r"content\.xml$", ".odt": r"content\.xml$"}.get(ending)
+        if inside is None:
+            return ""
+        with zipfile.ZipFile(path) as document:
+            pages = [document.read(name).decode("utf-8", "replace")
+                     for name in document.namelist() if re.match(inside, name)]
+    except (zipfile.BadZipFile, KeyError, OSError):
+        return ""
+    text = " ".join(pages)
+    text = re.sub(r"</(?:a:p|w:p|text:p|text:h)>", "\n", text)  # paragraph ends
+    return html.unescape(re.sub(r"<[^>]+>", "", text))
+
+
+def tags_from_words(title, text):
+    """
+    Tags suggested by a song's title and words. Returns
+    (["Marian", "Easter"], "Marian: 'mary' in the title; Easter: 'risen' 3 times").
+    """
+    title, text = " " + match_key(title) + " ", " " + match_key(text) + " "
+    tags, reasons = [], []
+    for tag, words in TAG_WORDS.items():
+        in_title = [word for word in words if " " + match_key(word) + " " in title]
+        counts = {word: text.count(" " + match_key(word) + " ") for word in words}
+        mentions = sum(counts.values())
+        if in_title:
+            reasons.append("{}: '{}' in the title".format(tag, in_title[0]))
+        elif mentions >= FEWEST_MENTIONS:
+            found = sorted((word for word in counts if counts[word]), key=lambda word: -counts[word])
+            reasons.append("{}: {} in the words".format(tag, ", ".join(
+                "'{}' x{}".format(word, counts[word]) for word in found[:3])))
+        else:
             continue
-        for name in (row.get("displayTitle"), row.get("textTitle"), row.get("firstLine")):
-            name = match_key(re.sub(r"\(.*?\)", "", name or ""))
-            if name == wanted:
-                score = 1.0
-            elif name.startswith(wanted + " "):
-                score = 0.95  # "Hail Holy Queen" is "Hail, Holy Queen Enthroned Above"
-            else:
-                score = difflib.SequenceMatcher(None, wanted, name).ratio()
-            if score > best_score:
-                best, best_score = ((row.get("displayTitle") or "").strip(), "/text/" + number), score
-    return best
+        tags.append(tag)
+    return tags, "; ".join(reasons)
 
 
-def page_text(html):
-    """A page's words without the HTML, on one line."""
-    html = re.sub(r"(?is)<(script|style)\b.*?</\1>", " ", html)
-    text = re.sub(r"<[^>]+>", " ", html)
-    for code, letter in (("&amp;", "&"), ("&#039;", "'"), ("&#39;", "'"), ("&quot;", '"'), ("&nbsp;", " "), ("&rsquo;", "'")):
-        text = text.replace(code, letter)
-    return re.sub(r"\s+", " ", text)
-
-
-def read_subjects(html):
+def suggest_tags(rows, songs_path, suggestions_path):
     """
-    Every "Subject:" (and "Topics:") on a hymn's page, one list per hymnal:
-    [["Blessed Virgin Mary", "Assumption of Mary"], ["Marian"], ...]
+    Suggests tags for each song on song_list.csv from the words in its
+    title and its slides, lyrics and chord files, and writes
+    tag_suggestions.csv for you to approve. Nothing is looked up online,
+    and song_list.csv isn't changed. Rows you've already approved or
+    turned down are kept as they are.
     """
-    text = page_text(html)
-    next_label = "|".join(re.escape(label) for label in HYMNARY_LABELS)
-    pattern = re.compile(r"\b(?:Subject|Topics)\s*:\s*(.*?)(?=\b(?:" + next_label + r")\s*:|$)")
-    hymnals = []
-    for found in pattern.finditer(text):
-        subjects = []
-        for part in re.split(r"[;|]", found.group(1)):
-            part = part.strip(" ,.")
-            if part and part.lower() not in ("more", "more..."):
-                subjects.append(part)
-        if subjects:
-            hymnals.append(subjects)
-    return hymnals
-
-
-def tags_for_subjects(hymnals):
-    """
-    Turns each hymnal's subjects into tags, and keeps the tags enough
-    hymnals agree on. Returns (["Marian", "Easter"], "Marian: 7 of 9 hymnals; ...").
-    """
-    counts = {}
-    for subjects in hymnals:
-        found = set()
-        for subject in subjects:
-            for tag, words in TAG_WORDS.items():
-                if any(re.search(r"\b" + re.escape(word) + r"\b", subject.lower()) for word in words):
-                    found.add(tag)
-        for tag in found:
-            counts[tag] = counts.get(tag, 0) + 1
-    tags = [
-        tag for tag in TAG_WORDS
-        if counts.get(tag, 0) >= FEWEST_HYMNALS and counts[tag] >= SMALLEST_SHARE * len(hymnals)
-    ]
-    why = "; ".join("{}: {} of {} hymnals".format(tag, counts[tag], len(hymnals)) for tag in tags)
-    return tags, why
-
-
-def look_up_song(title):
-    """Everything hymnary.org says about one song, for the cache."""
-    match = find_on_hymnary(title)
-    if match is None:
-        return {"found": False}
-    name, path = match
-    hymnals = read_subjects(ask_hymnary(path))
-    return {"found": True, "match": name, "link": HYMNARY + path, "subjects": hymnals}
-
-
-def read_cache(cache_path):
-    if not os.path.exists(cache_path):
-        return {}
-    with open(cache_path, encoding="utf-8") as f:
-        return json.load(f)
-
-
-def write_cache(cache, cache_path):
-    with open(cache_path + ".new", "w", encoding="utf-8") as f:
-        json.dump(cache, f, indent=1, ensure_ascii=False)
-    os.replace(cache_path + ".new", cache_path)
-
-
-def suggest_tags(songs_path, suggestions_path, cache_path):
-    """
-    Looks up each song in song_list.csv on hymnary.org (only songs not
-    looked up before: the answers are kept in hymnary_cache.json) and
-    writes tag_suggestions.csv for you to approve. song_list.csv isn't
-    changed. Rows you've already approved or turned down are kept as they are.
-    """
-    titles = [title for title in read_song_tags(songs_path)]
-    cache = read_cache(cache_path)
-    to_look_up = [title for title in titles if match_key(title) not in cache]
-    if to_look_up:
-        minutes = len(to_look_up) * 2 * HYMNARY_PAUSE / 60
-        print("Looking up", len(to_look_up), "songs on hymnary.org (about", round(minutes), "minutes).")
-        print("You can stop it with Ctrl+C; songs already looked up are remembered.")
-    for number, title in enumerate(to_look_up, 1):
-        try:
-            cache[match_key(title)] = look_up_song(title)
-        except RuntimeError as error:
-            print("  Stopped at", title, "-", error)
-            print("  Run scan --suggest-tags again later to carry on.")
-            break
-        except KeyboardInterrupt:
-            print("\n  Stopped. Run scan --suggest-tags again to carry on.")
-            break
-        finally:
-            write_cache(cache, cache_path)
-        answer = cache[match_key(title)]
-        print("  {}/{} {} - {}".format(number, len(to_look_up), title,
-                                      "found" if answer["found"] else "not on hymnary.org"))
+    words = {}
+    for row in rows:
+        if row["status"] != "skip" and row["kind"] in WORD_KINDS:
+            key = match_key(row["song_title"])
+            words[key] = words.get(key, "") + "\n" + words_in_file(row["file"])
 
     earlier = {}
     if os.path.exists(suggestions_path):
@@ -697,29 +586,23 @@ def suggest_tags(songs_path, suggestions_path, cache_path):
                 earlier[match_key(row.get("title") or "")] = row
 
     your_tags = read_song_tags(songs_path)
-    rows = []
-    for title in titles:
+    suggestions = []
+    for title, tags_now in your_tags.items():
         if match_key(title) in earlier:
-            rows.append(earlier[match_key(title)])
+            suggestions.append(earlier[match_key(title)])
             continue
-        answer = cache.get(match_key(title))
-        if not answer or not answer["found"]:
-            continue
-        tags, why = tags_for_subjects(answer["subjects"])
-        mine = [tag.lower() for tag in your_tags[title].split(", ") if tag]
+        tags, why = tags_from_words(title, words.get(match_key(title), ""))
+        mine = [tag.lower() for tag in tags_now.split(", ") if tag]
         new = [tag for tag in tags if tag.lower() not in mine]
-        if not new:
-            continue
-        rows.append({
-            "approve": "", "title": title, "suggested_tags": ", ".join(new), "your_tags": your_tags[title],
-            "why": why, "hymnary_match": answer["match"], "hymnary_link": answer["link"],
-        })
-    rows.sort(key=lambda row: (bool((row.get("approve") or "").strip()), row["title"].lower()))
+        if new:
+            suggestions.append({"approve": "", "title": title, "suggested_tags": ", ".join(new),
+                                "your_tags": tags_now, "why": why})
+    suggestions.sort(key=lambda row: (bool((row.get("approve") or "").strip()), row["title"].lower()))
     with open(suggestions_path, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=SUGGESTION_COLUMNS, extrasaction="ignore")
         writer.writeheader()
-        writer.writerows(rows)
-    waiting = sum(1 for row in rows if not (row.get("approve") or "").strip())
+        writer.writerows(suggestions)
+    waiting = sum(1 for row in suggestions if not (row.get("approve") or "").strip())
     print("Wrote", suggestions_path, "-", waiting, "songs with tags to approve.")
     if waiting:
         print('Put "yes" in the approve column for the ones you want (edit suggested_tags first')
@@ -1088,9 +971,8 @@ def main():
     scan_step.add_argument("--plan", default=PLAN_FILE)
     scan_step.add_argument("--songs", default=SONG_LIST_FILE, help="your song list (made on the first scan)")
     scan_step.add_argument("--suggest-tags", action="store_true",
-                           help="also look up new songs on hymnary.org and suggest tags in tag_suggestions.csv")
+                           help="also suggest tags from each song's words, in tag_suggestions.csv")
     scan_step.add_argument("--suggestions", default=SUGGESTIONS_FILE)
-    scan_step.add_argument("--cache", default=HYMNARY_CACHE_FILE)
 
     upload_step = steps.add_parser("upload", help="upload every row marked ok")
     upload_step.add_argument("--site", required=True, help="e.g. https://ourchoir.nz")
@@ -1132,7 +1014,7 @@ def main():
             if first_time:
                 print("Tag suggestions wait until song_list.csv is tidied: run scan --suggest-tags again then.")
             else:
-                suggest_tags(args.songs, args.suggestions, args.cache)
+                suggest_tags(rows, args.songs, args.suggestions)
     else:
         token = os.environ.get("IMPORT_TOKEN") or getpass.getpass("Import token: ")
         upload(args.plan, args.site, token, args.songs, args.suggestions)
