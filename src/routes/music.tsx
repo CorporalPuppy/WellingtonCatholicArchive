@@ -14,7 +14,8 @@
 import { Hono } from "hono";
 import { getAllSongFileSummaries, getSong, getSongFile, getSongFiles, getSongs } from "../database";
 import type { SongFileSummary } from "../database";
-import { canSeeMemberPages, describeFileLabels, formatFileSize, isAlwaysPublicKind, splitTags } from "../helpers";
+import { canSeeMemberPages, describeFileLabels, formatFileSize, isAlwaysPublicKind, printableAs, splitTags } from "../helpers";
+import { raw } from "hono/html";
 import { sendFileFromStorage } from "../files";
 import { requireMemberAccess } from "../middleware";
 import { FilterPills, FilterSelect, pageLink } from "../pages/filters";
@@ -340,6 +341,11 @@ async function showSong(c: Context<AppEnv>, songId: number) {
                 Open sheet music
               </a>
             )}
+            {firstSheet !== undefined && printableAs(firstSheet.filename, firstSheet.content_type) !== null && (
+              <a class="button button-secondary" href={"/files/" + firstSheet.id + "/print"} target="_blank">
+                Print
+              </a>
+            )}
             {song.youtube_url !== "" && (
               <a class="button button-secondary" href={song.youtube_url} target="_blank" rel="noopener">
                 Listen on YouTube
@@ -474,7 +480,7 @@ function previewType(file: Pick<SongFileRow, "filename" | "content_type" | "kind
   return "none";
 }
 
-/** One file: its name, a preview (if possible) and a download button. */
+/** One file: its name, a preview (if possible), and print and download buttons. */
 function SongFileItem(props: { file: SongFileRow; siteAddress: string }) {
   const file = props.file;
   const viewUrl = "/files/" + file.id;
@@ -497,6 +503,11 @@ function SongFileItem(props: { file: SongFileRow; siteAddress: string }) {
           {preview !== "none" && preview !== "audio" && (
             <a href={viewUrl} target="_blank" class="button button-small button-secondary">
               Open
+            </a>
+          )}
+          {printableAs(file.filename, file.content_type) !== null && (
+            <a href={viewUrl + "/print"} target="_blank" class="button button-small button-secondary">
+              Print
             </a>
           )}
           <a href={downloadUrl} class="button button-small">
@@ -561,6 +572,59 @@ routes.get("/files/:id", async (c) => {
     response.headers.set("Cache-Control", sharing + ", max-age=31536000, immutable");
   }
   return response;
+});
+
+// ---------------------------------------------------------------------------
+// Printing a file: GET /files/45/print
+//
+// A bare page that draws the file in the browser (PDFs with pdf.js, Word
+// files with docx-preview, see public/print.js) and then opens the print
+// window. Drawing it ourselves works the same on computers and phones,
+// where printing a PDF straight from a hidden frame often doesn't.
+// ---------------------------------------------------------------------------
+routes.get("/files/:id/print", async (c) => {
+  const fileId = Number(c.req.param("id"));
+  const file = await getSongFile(c.env.DB, fileId);
+  if (file === null) {
+    return c.text("File not found", 404);
+  }
+
+  if (!isAlwaysPublicKind(file.kind) && !canSeeMemberPages(c)) {
+    return c.redirect("/login?next=" + encodeURIComponent(c.req.path));
+  }
+
+  const printAs = printableAs(file.filename, file.content_type);
+  if (printAs === null) {
+    // Can't be drawn in the browser, so just hand over the file.
+    return c.redirect("/files/" + file.id + "?download=1");
+  }
+
+  return c.html(
+    <>
+      {raw("<!doctype html>")}
+      <html lang="en">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>{file.filename}</title>
+          <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+          <link rel="stylesheet" href="/print.css" />
+        </head>
+        <body>
+          <div class="print-bar">
+            <span class="print-name">{file.filename}</span>
+            <span class="print-status" id="print-status">Getting it ready to print…</span>
+            <button type="button" id="print-button" disabled>
+              Print
+            </button>
+            <a href={"/files/" + file.id + "?download=1"}>Download instead</a>
+          </div>
+          <div id="print-pages" data-file={"/files/" + file.id} data-print-as={printAs}></div>
+          <script src="/print.js"></script>
+        </body>
+      </html>
+    </>,
+  );
 });
 
 export default routes;

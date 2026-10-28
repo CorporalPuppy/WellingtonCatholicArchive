@@ -11,7 +11,7 @@
 
 import { Hono } from "hono";
 import { getEvent, getPowerpointsForEvent, getRoster, getSetlist, getSheetFilesForEvent, getUpcomingEvents } from "../database";
-import { canSeeMemberPages, FILE_KIND_LABELS, formatEventTime, formatFileSize, getTodaysDate, isAlwaysPublicKind, songPageLink } from "../helpers";
+import { canSeeMemberPages, FILE_KIND_LABELS, formatEventTime, formatFileSize, getTodaysDate, isAlwaysPublicKind, printableAs, songPageLink } from "../helpers";
 import { renderPage } from "../pages/render";
 import { EventList } from "../pages/event-list";
 import type { AppEnv, EventRow, PowerpointRow, SetlistRow, SongFileRow } from "../types";
@@ -229,9 +229,16 @@ function SetlistItem(props: { item: SetlistRow; sheetFiles: SongFileRow[]; linkT
 
       <div class="setlist-links">
         {filesForThisSong.map((file) => (
-          <a href={"/files/" + file.id} target="_blank" title={file.filename}>
-            {FILE_KIND_LABELS[file.kind]} ({[fileExtension(file.filename), file.music_key, file.version].filter((part) => part !== "").join(", ")})
-          </a>
+          <>
+            <a href={"/files/" + file.id} target="_blank" title={file.filename}>
+              {FILE_KIND_LABELS[file.kind]} ({[fileExtension(file.filename), file.music_key, file.version].filter((part) => part !== "").join(", ")})
+            </a>
+            {printableAs(file.filename, file.content_type) !== null && (
+              <a href={"/files/" + file.id + "/print"} target="_blank" title={"Print " + file.filename} class="setlist-print">
+                Print
+              </a>
+            )}
+          </>
         ))}
         {item.sheet_music_url !== "" && (
           <a href={item.sheet_music_url} target="_blank" rel="noopener">

@@ -271,6 +271,21 @@ export function workOutContentType(filename: string, browserType: string): strin
 }
 
 /**
+ * How a file can be printed from the site (see /files/:id/print), or null
+ * if it can't. Word files are drawn in the browser, so only the newer
+ * .docx kind works, not old .doc files.
+ */
+export function printableAs(filename: string, contentType: string): "pdf" | "docx" | "image" | "text" | null {
+  const name = filename.toLowerCase();
+  const type = contentType.split(";")[0].trim().toLowerCase();
+  if (type === "application/pdf" || name.endsWith(".pdf")) return "pdf";
+  if (name.endsWith(".docx")) return "docx";
+  if (["image/png", "image/jpeg", "image/gif", "image/webp"].includes(type)) return "image";
+  if (type === "text/plain" || name.endsWith(".txt") || name.endsWith(".cho") || name.endsWith(".chordpro")) return "text";
+  return null;
+}
+
+/**
  * The key and version of a song file in one short line, e.g.
  * "Key of D · with intro". Empty if the file has neither.
  */

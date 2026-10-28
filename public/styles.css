@@ -1149,3 +1149,9 @@ canvas.score-cover-preview.shown { opacity: 0.22; }
 /* ---- PowerPoints filed by occasion ---- */
 .occasion { margin-top: 14px; }
 .occasion-heading { font-size: 1rem; font-weight: 650; margin: 0 0 8px; }
+
+/* "Print" next to each file in a set list: an outlined pill. */
+.setlist-links a.setlist-print {
+  background: transparent;
+  border: 1px solid var(--accent-soft);
+}

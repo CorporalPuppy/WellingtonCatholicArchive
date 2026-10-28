@@ -1,0 +1,101 @@
+/* ===========================================================================
+   The print page (/files/:id/print): the file drawn as pages, with a small
+   bar on top that is left off the printout.
+   =========================================================================== */
+
+:root {
+  --accent: #2d4a7c;
+  --text: #1d1d1f;
+  --muted: #6e6e73;
+  --background: #e9e8e4;
+  --surface: #ffffff;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--text);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.print-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid #d8d6d0;
+  font-size: 0.9rem;
+}
+.print-name { font-weight: 600; overflow-wrap: anywhere; }
+.print-status { color: var(--muted); flex: 1; min-width: 12em; }
+.print-bar a { color: var(--accent); }
+.print-bar button {
+  font: inherit;
+  font-weight: 600;
+  padding: 6px 18px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+.print-bar button:disabled { opacity: 0.5; cursor: default; }
+
+/* PDF pages and pictures: one white page each. */
+.print-page {
+  max-width: 900px;
+  margin: 16px auto;
+  padding: 0 16px;
+}
+.print-page img {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+/* Text files (ChordPro and the like). */
+.print-text {
+  max-width: 900px;
+  margin: 16px auto;
+  padding: 24px;
+  background: #fff;
+  font: 0.95rem/1.45 "Courier New", Courier, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media print {
+  .print-bar { display: none; }
+  body { background: #fff; }
+
+  .print-page { max-width: none; margin: 0; padding: 0; break-after: page; }
+  .print-page:last-child { break-after: auto; }
+  .print-page img {
+    box-shadow: none;
+    /* Fit each page on one sheet of paper, even if the sizes differ (A4 / Letter). */
+    max-height: 100vh;
+    object-fit: contain;
+  }
+
+  .print-text { max-width: none; margin: 0; padding: 0; }
+}
+
+/* Word pages: shrunk to fit a phone screen, and to fit the paper (see print.js). */
+@media screen {
+  .docx-wrapper { zoom: var(--screen-fit, 1); }
+}
+@media print {
+  section.docx { zoom: var(--print-fit, 1); }
+}
+
+/* The PDF and Word pages bring their own margins. */
+@page { margin: 0; }
