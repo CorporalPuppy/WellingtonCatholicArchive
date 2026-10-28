@@ -11,7 +11,8 @@
 //                                 services.
 //                                 ?search= finds words in the title, church,
 //                                 notes or on the slides, best match first.
-//                                 ?year=A|B|C, ?church= and ?season= filter.
+//                                 ?year=A|B|C|current, ?church= and ?season=
+//                                 filter.
 //   GET /powerpoints/:id/file     open or download one file
 // ===========================================================================
 
@@ -32,7 +33,11 @@ routes.use("/powerpoints/*", requireMemberAccess);
 
 routes.get("/powerpoints", async (c) => {
   const search = (c.req.query("search") ?? "").trim();
-  const year = c.req.query("year") ?? "";
+  // The Year we're in now (it changes at the First Sunday of Advent).
+  const currentCycle = liturgicalYear(getTodaysDate(c.env.TIMEZONE)).cycle;
+  // ?year=current means whichever Year that is, so a bookmark keeps up.
+  const yearChoice = c.req.query("year") ?? "";
+  const year = yearChoice === "current" ? currentCycle : yearChoice;
   const church = c.req.query("church") ?? "";
   const season = c.req.query("season") ?? "";
   const filtering = year !== "" || church !== "" || season !== "";
@@ -46,7 +51,6 @@ routes.get("/powerpoints", async (c) => {
         (church === "" || powerpoint.church === church) &&
         (season === "" || filed.group === season),
     );
-  const currentCycle = liturgicalYear(getTodaysDate(c.env.TIMEZONE)).cycle;
 
   /** The address of this page with a different Year, keeping the search and other filters. */
   function yearLink(cycle: string): string {
@@ -66,7 +70,7 @@ routes.get("/powerpoints", async (c) => {
         </p>
         <form method="get" action="/powerpoints" class="search music-search music-search-wide">
           <input type="search" name="search" value={search} placeholder="Search titles and the words on the slides" />
-          {year !== "" && <input type="hidden" name="year" value={year} />}
+          {yearChoice !== "" && <input type="hidden" name="year" value={yearChoice} />}
           <FilterSelect name="season" label="Season" anyLabel="Any season" options={[...OCCASION_GROUPS, OTHER]} selected={season} />
           {churches.length > 0 && (
             <FilterSelect name="church" label="Church" anyLabel="Any church" options={churches} selected={church} />
@@ -80,10 +84,11 @@ routes.get("/powerpoints", async (c) => {
         label="Show slides for"
         pills={[
           { label: "All", href: yearLink(""), active: year === "" },
+          { label: "Current year (" + currentCycle + ")", href: yearLink("current"), active: yearChoice === "current" },
           ...(["A", "B", "C"] as const).map((cycle) => ({
             label: "Year " + cycle,
             href: yearLink(cycle),
-            active: year === cycle,
+            active: yearChoice === cycle,
           })),
         ]}
       />
@@ -91,7 +96,7 @@ routes.get("/powerpoints", async (c) => {
       <p class="music-count muted">
         {powerpoints.length === 1 ? "1 PowerPoint" : powerpoints.length + " PowerPoints"}
         {search !== "" && <> matching "{search}"</>}
-        {year !== "" && <> for Year {year}</>}
+        {year !== "" && <> for Year {year}{yearChoice === "current" && " (the current year)"}</>}
         {season !== "" && <> in {season}</>}
         {church !== "" && <> at {church}</>}
         {(search !== "" || filtering) && (
