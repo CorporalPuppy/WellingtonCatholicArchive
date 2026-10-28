@@ -21,6 +21,7 @@ import { sendFileFromStorage } from "../files";
 import { formatDate, formatFileSize, getTodaysDate, liturgicalYear } from "../helpers";
 import { OCCASION_GROUPS, occasionGroup, occasionOrder, occasionsOn } from "../liturgy";
 import { requireMemberAccess } from "../middleware";
+import { FilterPills, FilterSelect, pageLink } from "../pages/filters";
 import { renderPage } from "../pages/render";
 import type { AppEnv, PowerpointRow } from "../types";
 
@@ -47,54 +48,69 @@ routes.get("/powerpoints", async (c) => {
     );
   const currentCycle = liturgicalYear(getTodaysDate(c.env.TIMEZONE)).cycle;
 
+  /** The address of this page with a different Year, keeping the search and other filters. */
+  function yearLink(cycle: string): string {
+    return pageLink("/powerpoints", { search: search, year: cycle, season: season, church: church });
+  }
+
   return renderPage(
     c,
     "PowerPoints",
-    <>
-      <h1>PowerPoints</h1>
-      <p class="muted">The slides for each Sunday and service. Prayers, rosaries and other slides used again and again are under <a href="/prayers">Prayers and services</a>.</p>
-      <form method="get" action="/powerpoints" class="powerpoint-search">
-        <div class="search">
-          <input type="search" name="search" value={search} placeholder="Search titles and the words on the slides, e.g. Here I Am Lord" />
-          <button type="submit">Search</button>
-        </div>
-        <div class="filters">
-          <select name="year" aria-label="Year" onchange="this.form.submit()">
-            <option value="">Any year</option>
-            {(["A", "B", "C"] as const).map((cycle) => (
-              <option value={cycle} selected={year === cycle}>Year {cycle}</option>
-            ))}
-          </select>
-          <select name="season" aria-label="Season" onchange="this.form.submit()">
-            <option value="">Any season</option>
-            {[...OCCASION_GROUPS, OTHER].map((each) => (
-              <option value={each} selected={season === each}>{each}</option>
-            ))}
-          </select>
+    <div class="music-page">
+      <header class="music-hero">
+        <p class="music-eyebrow">PowerPoint archive</p>
+        <h1 class="music-title">Slides for every Sunday</h1>
+        <p class="music-intro">
+          The slides for each Sunday and service, filed by Year and season. Prayers, rosaries and other slides used
+          again and again are under <a href="/prayers">Prayers and services</a>.
+        </p>
+        <form method="get" action="/powerpoints" class="search music-search music-search-wide">
+          <input type="search" name="search" value={search} placeholder="Search titles and the words on the slides" />
+          {year !== "" && <input type="hidden" name="year" value={year} />}
+          <FilterSelect name="season" label="Season" anyLabel="Any season" options={[...OCCASION_GROUPS, OTHER]} selected={season} />
           {churches.length > 0 && (
-            <select name="church" aria-label="Church" onchange="this.form.submit()">
-              <option value="">Any church</option>
-              {churches.map((each) => (
-                <option value={each} selected={church === each}>{each}</option>
-              ))}
-            </select>
+            <FilterSelect name="church" label="Church" anyLabel="Any church" options={churches} selected={church} />
           )}
-          {(search !== "" || filtering) && <a href="/powerpoints">Clear</a>}
-        </div>
-      </form>
+          <button type="submit">Search</button>
+        </form>
+      </header>
 
-      {powerpoints.length === 0 && <p>No PowerPoints found.</p>}
+      {/* Like a shop's categories: Year A, B or C of the Sunday cycle. */}
+      <FilterPills
+        label="Show slides for"
+        pills={[
+          { label: "All", href: yearLink(""), active: year === "" },
+          ...(["A", "B", "C"] as const).map((cycle) => ({
+            label: "Year " + cycle,
+            href: yearLink(cycle),
+            active: year === cycle,
+          })),
+        ]}
+      />
+
+      <p class="music-count muted">
+        {powerpoints.length === 1 ? "1 PowerPoint" : powerpoints.length + " PowerPoints"}
+        {search !== "" && <> matching "{search}"</>}
+        {year !== "" && <> for Year {year}</>}
+        {season !== "" && <> in {season}</>}
+        {church !== "" && <> at {church}</>}
+        {(search !== "" || filtering) && (
+          <>
+            {" · "}
+            <a href="/powerpoints">Clear</a>
+          </>
+        )}
+      </p>
+
+      {powerpoints.length === 0 && <p class="music-empty">No PowerPoints found.</p>}
 
       {/* Searching: one list, best match first. */}
       {search !== "" && powerpoints.length > 0 && (
-        <>
-          <p class="muted">{powerpoints.length === 1 ? "1 PowerPoint found" : powerpoints.length + " PowerPoints found"}</p>
-          <ul class="file-list">
-            {powerpoints.map(({ powerpoint, filed }) => (
-              <PowerpointItem powerpoint={powerpoint} filed={filed} showOccasion={true} />
-            ))}
-          </ul>
-        </>
+        <ul class="file-list">
+          {powerpoints.map(({ powerpoint, filed }) => (
+            <PowerpointItem powerpoint={powerpoint} filed={filed} showOccasion={true} />
+          ))}
+        </ul>
       )}
 
       {/* Otherwise: a dropdown for each of Year A, B and C (then any year,
@@ -125,7 +141,7 @@ routes.get("/powerpoints", async (c) => {
             ))}
           </details>
         ))}
-    </>,
+    </div>,
   );
 });
 

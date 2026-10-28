@@ -6,6 +6,14 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
+	// The site lives at its own domain, so keep the *.workers.dev address
+	// (and per-version preview addresses) switched off. Without these lines,
+	// every deploy would switch them back on.
+	"workers_dev": false,
+	"preview_urls": false,
+	"routes": [
+		{ "pattern": "choir.misaapp.net", "custom_domain": true }
+	],
 	// Static files in ./public (CSS, images, logo) are served for free
 	// before the Worker runs.
 	"assets": {

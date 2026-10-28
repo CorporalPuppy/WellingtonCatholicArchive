@@ -808,18 +808,7 @@ details.preview img { max-width: 100%; margin-top: 10px; border-radius: 10px; }
 .storage-bar { height: 8px; margin: 10px 0; border-radius: 999px; background: var(--accent-soft); overflow: hidden; }
 .storage-bar-fill { height: 100%; border-radius: 999px; background: var(--accent); }
 
-/* ---- PowerPoints: search box and filters ---- */
-form.powerpoint-search { margin-bottom: 20px; }
-form.powerpoint-search .search { display: flex; gap: 8px; }
-form.powerpoint-search .search input { margin: 0; }
-form.powerpoint-search .filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  margin-top: 8px;
-}
-form.powerpoint-search .filters select { width: auto; flex: 1 1 150px; margin: 0; }
+/* ---- PowerPoints: words from the slides around a search match ---- */
 .search-snippet { margin: 8px 0 0; font-size: 0.92rem; color: var(--muted); }
 .search-snippet mark {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
@@ -869,6 +858,10 @@ main:has(> .music-page) { max-width: 1040px; }
 }
 .music-intro { color: var(--muted); max-width: 36em; margin: 0 auto 24px; }
 .music-search { max-width: 560px; margin: 0 auto 8px; }
+.music-search input[type="search"] { flex: 1 1 220px; min-width: 0; }
+.music-search select.tag-filter { min-width: 0; }
+/* Room for two dropdowns (PowerPoints: season and church). */
+.music-search-wide { max-width: 760px; }
 
 /* "All · Sheet music · Chord charts ...": like a shop's categories. */
 .music-filters {
@@ -1136,6 +1129,10 @@ canvas.score-cover-preview.shown { opacity: 0.22; }
 
 @media (max-width: 600px) {
   .music-hero { padding-top: 8px; }
+  /* The search box gets its own line; the dropdowns and button share the next. */
+  form.music-search { flex-wrap: wrap; }
+  form.music-search:has(select) input[type="search"] { flex: 1 1 100%; }
+  form.music-search select.tag-filter { flex: 1 1 0; min-width: 0; }
   .letter-jump { top: 0; position: static; }
   .score-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 14px; }
   .score-cover { padding: 14px 10px; }

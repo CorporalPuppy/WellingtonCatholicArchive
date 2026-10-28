@@ -17,6 +17,7 @@ import type { SongFileSummary } from "../database";
 import { canSeeMemberPages, describeFileLabels, formatFileSize, isAlwaysPublicKind, splitTags } from "../helpers";
 import { sendFileFromStorage } from "../files";
 import { requireMemberAccess } from "../middleware";
+import { FilterPills, FilterSelect, pageLink } from "../pages/filters";
 import { renderPage } from "../pages/render";
 import type { Context } from "hono";
 import type { AppEnv, SongFileRow, SongRow } from "../types";
@@ -66,12 +67,7 @@ async function showSongList(c: Context<AppEnv>, section: "music" | "prayers") {
 
   /** The address of this page with a different filter, keeping the search. */
   function filterLink(kind: string): string {
-    const query = new URLSearchParams();
-    if (search !== "") query.set("search", search);
-    if (kind !== "") query.set("has", kind);
-    if (tag !== "") query.set("tag", tag);
-    const text = query.toString();
-    return text === "" ? address : address + "?" + text;
+    return pageLink(address, { search: search, has: kind, tag: tag });
   }
 
   return renderPage(
@@ -94,27 +90,23 @@ async function showSongList(c: Context<AppEnv>, section: "music" | "prayers") {
         <form method="get" action={address} class="search music-search">
           <input type="search" name="search" value={search} placeholder={isPrayers ? "Search by name or tag" : "Search by title, author or tag"} />
           {filter !== null && <input type="hidden" name="has" value={filter.kind} />}
-          {allTags.length > 0 && (
-            <select name="tag" aria-label="Tag" onchange="this.form.submit()" class="tag-filter">
-              <option value="">Any tag</option>
-              {allTags.map((each) => (
-                <option value={each} selected={tag === each}>{each}</option>
-              ))}
-            </select>
-          )}
+          {allTags.length > 0 && <FilterSelect name="tag" label="Tag" anyLabel="Any tag" options={allTags} selected={tag} />}
           <button type="submit">Search</button>
         </form>
       </header>
 
       {/* Like a shop's categories: show only songs that have this kind of file. */}
-      <nav class="music-filters" aria-label="Show songs with">
-        <a href={filterLink("")} class={filter === null ? "active" : ""}>All</a>
-        {RESOURCE_FILTERS.map((item) => (
-          <a href={filterLink(item.kind)} class={filter !== null && filter.kind === item.kind ? "active" : ""}>
-            {item.label}
-          </a>
-        ))}
-      </nav>
+      <FilterPills
+        label="Show songs with"
+        pills={[
+          { label: "All", href: filterLink(""), active: filter === null },
+          ...RESOURCE_FILTERS.map((item) => ({
+            label: item.label,
+            href: filterLink(item.kind),
+            active: filter !== null && filter.kind === item.kind,
+          })),
+        ]}
+      />
 
       <p class="music-count muted">
         {songs.length === 1 ? "1 " + (isPrayers ? "item" : "song") : songs.length + (isPrayers ? " items" : " songs")}
