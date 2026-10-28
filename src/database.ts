@@ -4,6 +4,7 @@
 //
 // The tables are created by the files in the /migrations folder.
 
+import { cycleAndOccasionsOn } from "./liturgy";
 import type { EventRow, ParishRow, PowerpointRow, ReadingsRow, RosterRow, SetlistRow, SongFileRow, SongRow } from "./types";
 
 // ===========================================================================
@@ -502,7 +503,7 @@ const POWERPOINT_COLUMNS = `
   powerpoints.id, powerpoints.title, powerpoints.service_date, powerpoints.notes, powerpoints.r2_key,
   powerpoints.filename, powerpoints.content_type, powerpoints.size, powerpoints.uploaded_at,
   powerpoints.event_id, powerpoints.source_path, powerpoints.source_hash, powerpoints.church,
-  powerpoints.text_hash, events.title AS event_title`;
+  powerpoints.text_hash, powerpoints.cycle, powerpoints.occasion, events.title AS event_title`;
 const SELECT_POWERPOINTS = `
   SELECT ${POWERPOINT_COLUMNS}
   FROM powerpoints
@@ -566,13 +567,21 @@ export async function getPowerpointChurches(db: D1Database): Promise<string[]> {
  * archive for the same date that aren't tied to another event.
  */
 export async function getPowerpointsForEvent(db: D1Database, eventId: number, date: string): Promise<PowerpointRow[]> {
+  // Also those filed under the Sunday or feast the event falls on, in this
+  // Year (A, B or C) or in no particular Year.
+  const { cycle, occasions } = cycleAndOccasionsOn(date);
+  const occasionMatch =
+    occasions.length === 0
+      ? ""
+      : ` OR (powerpoints.event_id IS NULL AND powerpoints.cycle IN (?, '')
+              AND powerpoints.occasion IN (${occasions.map(() => "?").join(", ")}))`;
   const result = await db
     .prepare(
       SELECT_POWERPOINTS +
-        ` WHERE powerpoints.event_id = ? OR (powerpoints.event_id IS NULL AND powerpoints.service_date = ?)
+        ` WHERE powerpoints.event_id = ? OR (powerpoints.event_id IS NULL AND powerpoints.service_date = ?)${occasionMatch}
           ORDER BY powerpoints.title`,
     )
-    .bind(eventId, date)
+    .bind(eventId, date, ...(occasions.length === 0 ? [] : [cycle, ...occasions]))
     .all<PowerpointRow>();
   return result.results;
 }
@@ -622,17 +631,21 @@ export async function getPowerpointBySourcePath(db: D1Database, sourcePath: stri
 }
 
 /** Adds a PowerPoint from the bulk import. */
+/** Where an imported PowerPoint is filed: its church, Year ("A", "B", "C" or "") and occasion ("" = other services). */
+export type PowerpointFiling = { church: string; cycle: string; occasion: string };
+
 export async function addImportedPowerpoint(
   db: D1Database,
   powerpoint: NewPowerpoint,
-  church: string,
+  filing: PowerpointFiling,
   sourcePath: string,
   sourceHash: string,
 ): Promise<void> {
   await db
     .prepare(
-      `INSERT INTO powerpoints (title, service_date, notes, r2_key, filename, content_type, size, church, source_path, source_hash)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO powerpoints (title, service_date, notes, r2_key, filename, content_type, size, church, cycle, occasion,
+         source_path, source_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       powerpoint.title,
@@ -642,7 +655,9 @@ export async function addImportedPowerpoint(
       powerpoint.filename,
       powerpoint.contentType,
       powerpoint.size,
-      church,
+      filing.church,
+      filing.cycle,
+      filing.occasion,
       sourcePath,
       sourceHash,
     )
@@ -668,19 +683,22 @@ export async function replacePowerpointContents(
     .run();
 }
 
-/** A new title, date, church, file name or place on your computer for an imported PowerPoint. */
+/** A new title, date, filing, file name or place on your computer for an imported PowerPoint. */
 export async function updateImportedPowerpoint(
   db: D1Database,
   powerpointId: number,
   title: string,
   serviceDate: string,
-  church: string,
+  filing: PowerpointFiling,
   filename: string,
   sourcePath: string,
 ): Promise<void> {
   await db
-    .prepare("UPDATE powerpoints SET title = ?, service_date = ?, church = ?, filename = ?, source_path = ? WHERE id = ?")
-    .bind(title, serviceDate, church, filename, sourcePath, powerpointId)
+    .prepare(
+      `UPDATE powerpoints SET title = ?, service_date = ?, church = ?, cycle = ?, occasion = ?, filename = ?, source_path = ?
+       WHERE id = ?`,
+    )
+    .bind(title, serviceDate, filing.church, filing.cycle, filing.occasion, filename, sourcePath, powerpointId)
     .run();
 }
 

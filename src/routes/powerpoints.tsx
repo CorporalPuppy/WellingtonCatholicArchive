@@ -3,8 +3,12 @@
 // anyone to find again. (Members only if EVERYTHING_PUBLIC is "no".)
 // Slides tied to an event also show on that event's page.
 //
-//   GET /powerpoints              grouped into Year A, B and C (the Sunday
-//                                 cycle), then by year, newest first.
+//   GET /powerpoints              filed by occasion, not by date: Year A, B
+//                                 and C (the Sunday cycle), then the season,
+//                                 then each Sunday or feast in the Church's
+//                                 order. Decks with no occasion (rosaries,
+//                                 ordinations, retreats...) are under Other
+//                                 services.
 //                                 ?search= finds words in the title, church,
 //                                 notes or on the slides, best match first.
 //                                 ?year=A|B|C, ?church= and ?season= filter.
@@ -14,7 +18,8 @@
 import { Hono } from "hono";
 import { getPowerpoint, getPowerpointChurches, getPowerpoints } from "../database";
 import { sendFileFromStorage } from "../files";
-import { SEASONS, formatDate, formatFileSize, getTodaysDate, liturgicalSeason, liturgicalYear } from "../helpers";
+import { formatDate, formatFileSize, getTodaysDate, liturgicalYear } from "../helpers";
+import { OCCASION_GROUPS, occasionGroup, occasionOrder, occasionsOn } from "../liturgy";
 import { requireMemberAccess } from "../middleware";
 import { renderPage } from "../pages/render";
 import type { AppEnv, PowerpointRow } from "../types";
@@ -32,12 +37,14 @@ routes.get("/powerpoints", async (c) => {
   const filtering = year !== "" || church !== "" || season !== "";
 
   const churches = await getPowerpointChurches(c.env.DB);
-  const powerpoints = (await getPowerpoints(c.env.DB, search)).filter(
-    (powerpoint) =>
-      (year === "" || liturgicalYear(powerpoint.service_date).cycle === year) &&
-      (church === "" || powerpoint.church === church) &&
-      (season === "" || liturgicalSeason(powerpoint.service_date) === season),
-  );
+  const powerpoints = (await getPowerpoints(c.env.DB, search))
+    .map((powerpoint) => ({ powerpoint: powerpoint, filed: filingOf(powerpoint) }))
+    .filter(
+      ({ powerpoint, filed }) =>
+        (year === "" || filed.cycle === year) &&
+        (church === "" || powerpoint.church === church) &&
+        (season === "" || filed.group === season),
+    );
   const currentCycle = liturgicalYear(getTodaysDate(c.env.TIMEZONE)).cycle;
 
   return renderPage(
@@ -60,7 +67,7 @@ routes.get("/powerpoints", async (c) => {
           </select>
           <select name="season" aria-label="Season" onchange="this.form.submit()">
             <option value="">Any season</option>
-            {SEASONS.map((each) => (
+            {[...OCCASION_GROUPS, OTHER].map((each) => (
               <option value={each} selected={season === each}>{each}</option>
             ))}
           </select>
@@ -82,26 +89,38 @@ routes.get("/powerpoints", async (c) => {
       {search !== "" && powerpoints.length > 0 && (
         <>
           <p class="muted">{powerpoints.length === 1 ? "1 PowerPoint found" : powerpoints.length + " PowerPoints found"}</p>
-          <ul class="file-list">{powerpoints.map((powerpoint) => <PowerpointItem powerpoint={powerpoint} />)}</ul>
+          <ul class="file-list">
+            {powerpoints.map(({ powerpoint, filed }) => (
+              <PowerpointItem powerpoint={powerpoint} filed={filed} showOccasion={true} />
+            ))}
+          </ul>
         </>
       )}
 
-      {/* Otherwise: one dropdown each for Year A, B and C. Inside, a heading
-          per Church year (e.g. "2025 - 2026") and its PowerPoints by date.
-          The current year's dropdown starts open (all of them when filtering). */}
+      {/* Otherwise: a dropdown for each of Year A, B and C (then any year,
+          then other services). Inside, a heading per season and one per
+          Sunday or feast, in the Church's order. The current Year starts
+          open (all of them when filtering). */}
       {search === "" &&
-        groupByCycle(powerpoints).map((cycle) => (
-          <details class="file-section" open={filtering || cycle.cycle === currentCycle}>
+        groupForPage(powerpoints).map((shelf) => (
+          <details class="file-section" open={filtering || shelf.cycle === currentCycle}>
             <summary>
-              <span class="file-section-heading">Year {cycle.cycle}</span>
-              <span class="count-pill">{cycle.count}</span>
+              <span class="file-section-heading">{shelf.label}</span>
+              <span class="count-pill">{shelf.count}</span>
             </summary>
-            {cycle.years.map((group) => (
+            {shelf.seasons.map((seasonGroup) => (
               <section>
-                <h2 class="month-heading">
-                  {group.endYear - 1} - {group.endYear}
-                </h2>
-                <ul class="file-list">{group.powerpoints.map((powerpoint) => <PowerpointItem powerpoint={powerpoint} />)}</ul>
+                {shelf.label !== OTHER && <h2 class="month-heading">{seasonGroup.season}</h2>}
+                {seasonGroup.occasions.map((occasionGroup) => (
+                  <div class="occasion">
+                    {occasionGroup.occasion !== "" && <h3 class="occasion-heading">{occasionGroup.occasion}</h3>}
+                    <ul class="file-list">
+                      {occasionGroup.items.map(({ powerpoint, filed }) => (
+                        <PowerpointItem powerpoint={powerpoint} filed={filed} showOccasion={false} />
+                      ))}
+                    </ul>
+                  </div>
+                ))}
               </section>
             ))}
           </details>
@@ -110,10 +129,37 @@ routes.get("/powerpoints", async (c) => {
   );
 });
 
-/** One PowerPoint in a list: title, date, church, event, file and download button. */
-function PowerpointItem(props: { powerpoint: PowerpointRow }) {
-  const powerpoint = props.powerpoint;
-  const { cycle } = liturgicalYear(powerpoint.service_date);
+const OTHER = "Other services";
+
+type Filed = { cycle: string; occasion: string; group: string };
+
+/**
+ * Where a PowerPoint is filed. The bulk import sets its Year and occasion.
+ * One with a date but no occasion (uploaded by hand, or a date was all its
+ * file name had) is filed under the Sunday or feast of that date, if there
+ * is one. No occasion = other services.
+ */
+function filingOf(powerpoint: PowerpointRow): Filed {
+  let cycle = powerpoint.cycle;
+  let occasion = powerpoint.occasion;
+  const date = powerpoint.service_date;
+  if (occasion === "" && date !== "") {
+    occasion = occasionsOn(date)[0] ?? "";
+  }
+  if (cycle === "" && date !== "" && occasion !== "") {
+    cycle = liturgicalYear(date).cycle;
+  }
+  return { cycle: cycle, occasion: occasion, group: occasionGroup(occasion) ?? OTHER };
+}
+
+/** One PowerPoint in a list: title, where it's filed, church, date, event, file and download button. */
+function PowerpointItem(props: { powerpoint: PowerpointRow; filed: Filed; showOccasion: boolean }) {
+  const { powerpoint, filed } = props;
+  const details: string[] = [];
+  if (props.showOccasion && filed.occasion !== "") details.push(filed.occasion);
+  if (filed.cycle !== "" && (props.showOccasion || filed.group === OTHER)) details.push("Year " + filed.cycle);
+  if (powerpoint.church !== "") details.push(powerpoint.church);
+  if (powerpoint.service_date !== "") details.push(formatDate(powerpoint.service_date));
   return (
     <li>
       <div class="file-row">
@@ -121,15 +167,14 @@ function PowerpointItem(props: { powerpoint: PowerpointRow }) {
           <strong>{powerpoint.title}</strong>
           <br />
           <span class="muted">
-            {formatDate(powerpoint.service_date)} (Year {cycle}, {liturgicalSeason(powerpoint.service_date)})
-            {powerpoint.church !== "" && " - " + powerpoint.church}
+            {details.join(" - ")}
             {powerpoint.event_id !== null && powerpoint.event_title !== null && (
               <>
-                {" - "}
+                {details.length > 0 && " - "}
                 <a href={"/events/" + powerpoint.event_id}>{powerpoint.event_title}</a>
               </>
             )}
-            <br />
+            {(details.length > 0 || powerpoint.event_id !== null) && <br />}
             {powerpoint.filename} ({formatFileSize(powerpoint.size)})
           </span>
           {powerpoint.snippet !== undefined && powerpoint.snippet.includes("\u0001") && (
@@ -160,32 +205,46 @@ function Highlighted(props: { text: string }) {
   return <>{parts.map((part, index) => (index % 2 === 1 ? <mark>{part}</mark> : part))}</>;
 }
 
-type YearGroup = { endYear: number; powerpoints: PowerpointRow[] };
-type CycleGroup = { cycle: "A" | "B" | "C"; count: number; years: YearGroup[] };
+type Item = { powerpoint: PowerpointRow; filed: Filed };
+type OccasionShelf = { occasion: string; items: Item[] };
+type SeasonShelf = { season: string; occasions: OccasionShelf[] };
+type Shelf = { label: string; cycle: string; count: number; seasons: SeasonShelf[] };
 
 /**
- * Splits PowerPoints (already newest first) into Year A, B and C, and
- * within each into Church years, newest first. Cycles with nothing in
- * them are left out.
+ * Puts PowerPoints on the page's shelves: Year A, B and C, then any year
+ * (an occasion with no Year), then other services. Inside each Year, by
+ * season, then by Sunday or feast in the Church's order, then by title.
+ * Shelves with nothing on them are left out.
  */
-function groupByCycle(powerpoints: PowerpointRow[]): CycleGroup[] {
-  const cycles: CycleGroup[] = [
-    { cycle: "A", count: 0, years: [] },
-    { cycle: "B", count: 0, years: [] },
-    { cycle: "C", count: 0, years: [] },
+function groupForPage(items: Item[]): Shelf[] {
+  const shelves: Shelf[] = [
+    ...(["A", "B", "C"] as const).map((cycle) => ({ label: "Year " + cycle, cycle: cycle as string, count: 0, seasons: [] })),
+    { label: "Any year", cycle: "", count: 0, seasons: [] },
+    { label: OTHER, cycle: "", count: 0, seasons: [] },
   ];
-  for (const powerpoint of powerpoints) {
-    const { cycle, endYear } = liturgicalYear(powerpoint.service_date);
-    const group = cycles.find((each) => each.cycle === cycle)!;
-    group.count += 1;
-    const lastYear = group.years[group.years.length - 1];
-    if (lastYear !== undefined && lastYear.endYear === endYear) {
-      lastYear.powerpoints.push(powerpoint);
-    } else {
-      group.years.push({ endYear: endYear, powerpoints: [powerpoint] });
+  const sorted = [...items].sort(
+    (a, b) =>
+      occasionOrder(a.filed.occasion) - occasionOrder(b.filed.occasion) ||
+      a.powerpoint.title.localeCompare(b.powerpoint.title),
+  );
+  for (const item of sorted) {
+    const { cycle, occasion, group } = item.filed;
+    const shelf =
+      group === OTHER ? shelves[4] : shelves.find((each) => each.label === "Year " + cycle) ?? shelves[3];
+    shelf.count += 1;
+    let seasonShelf = shelf.seasons.find((each) => each.season === group);
+    if (seasonShelf === undefined) {
+      seasonShelf = { season: group, occasions: [] };
+      shelf.seasons.push(seasonShelf);
     }
+    let occasionShelf = seasonShelf.occasions.find((each) => each.occasion === occasion);
+    if (occasionShelf === undefined) {
+      occasionShelf = { occasion: occasion, items: [] };
+      seasonShelf.occasions.push(occasionShelf);
+    }
+    occasionShelf.items.push(item);
   }
-  return cycles.filter((each) => each.count > 0);
+  return shelves.filter((shelf) => shelf.count > 0);
 }
 
 routes.get("/powerpoints/:id/file", async (c) => {

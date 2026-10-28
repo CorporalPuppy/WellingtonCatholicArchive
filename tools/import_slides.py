@@ -1,8 +1,12 @@
 """
 Bulk import of Sunday and service PowerPoints into the choir website.
 
-They go in the site's PowerPoint archive under the date they were used, so
-each one shows on that day's events. It works like import_music.py:
+Each PowerPoint is filed under its Year (A, B or C, the cycle of Sunday
+readings) and its occasion, such as "15th Sunday in Ordinary Time" or
+"Easter Sunday", not under a date. So it shows up on the right Sunday's
+events every time that Year comes round. PowerPoints with no occasion
+(rosaries, ordinations, retreats...) go under "Other services".
+It works like import_music.py:
 
   1. SCAN: read your folder and write a spreadsheet (slides_plan.csv):
 
@@ -12,17 +16,15 @@ each one shows on that day's events. It works like import_music.py:
      in SLIDES_FOLDERS below, plus PowerPoints sitting loose in the folder
      itself.
 
-     Most of your file names say which Sunday or feast they're for, e.g.
-     "15th Sunday in Ordinary Time - St Teresa's Church", and the folder
-     says the year ("Year A - 2026"). From those the script works out the
-     date. A date in the name also works, e.g. "20260531" or "29-03-2026".
+     The occasion comes from the file name ("15th Sunday in Ordinary Time -
+     St Teresa's Church") and the Year from its folder ("Year A - 2026").
 
-  2. CHECK: open slides_plan.csv in Excel. Rows marked "check" have no date
-     the script could work out (an ordination, a retreat, the Holy Rosary).
-     Type the date in the date column and change "check" to "ok", or mark
-     it "skip". The church column is filled in from the name (see CHURCHES
-     below) and is used by the church filter on the site: fix or fill it
-     in if you like. Save.
+  2. CHECK (optional): open slides_plan.csv in Excel. You can change any
+     row's year (A, B, C or empty), occasion (one of the names in
+     OCCASIONS below, or empty for Other services), title or church. The
+     date column is optional: a date ties a deck to that day's events too,
+     which suits one-off services. Rows marked "check" have an occasion
+     the site doesn't know; fix it, then set them to ok. Save.
 
   3. UPLOAD: upload every row marked "ok".
 
@@ -31,17 +33,17 @@ each one shows on that day's events. It works like import_music.py:
      It asks for the import token, the same one as the music import.
 
 The status column:
-  ok     uploaded, under the date in the date column
-  check  no date yet (the note says why). Fill in the date, then set ok or skip.
+  ok     uploaded and filed as the row says
+  check  the occasion isn't one the site knows (the note says so). Fix it.
   skip   not on the site (videos, Word files, autosaves...). If it was
          uploaded before, "upload" offers to remove it.
 
 Like the music import, "upload" makes the site match your folders: run
 "scan" then "upload" again after any change. Unchanged files are skipped,
 edited ones replace the site's copy, renamed or moved ones are moved
-without being sent again, a changed title, date or church is updated, and
-files gone from your folders are removed once you type yes. Running "scan"
-again keeps what you typed in an existing slides_plan.csv.
+without being sent again, a changed year, occasion, title, church or date
+is updated, and files gone from your folders are removed once you type yes.
+Running "scan" again keeps what you typed in an existing slides_plan.csv.
 
 "upload" also sends the words on each PowerPoint's slides (song titles,
 lyrics, readings), so the site's search finds them. Only .pptx and .odp
@@ -71,7 +73,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from import_music import BIGGEST_FILE_BYTES, ask_site, file_fingerprint, read_csv  # noqa: E402
 
 PLAN_FILE = "slides_plan.csv"
-COLUMNS = ["status", "date", "title", "church", "note", "file"]
+COLUMNS = ["status", "year", "occasion", "title", "church", "date", "note", "file"]
 
 # Folders (directly inside the folder you scan) holding Sunday and service
 # PowerPoints. Everything inside them is read, including subfolders.
@@ -92,9 +94,6 @@ CHURCHES = [
 # The most words kept from one PowerPoint for searching (about 40 pages).
 MOST_TEXT = 100_000
 
-ONE_DAY = datetime.timedelta(days=1)
-ONE_WEEK = datetime.timedelta(days=7)
-
 MONTHS = {
     name: number
     for number, names in enumerate(
@@ -108,158 +107,123 @@ MONTHS = {
 
 
 # ---------------------------------------------------------------------------
-# The Church's calendar, as kept in New Zealand
+# Occasions: the Sundays and feasts a PowerPoint can be filed under. The
+# names must match OCCASIONS in src/liturgy.ts on the site.
 # ---------------------------------------------------------------------------
 
-def easter_sunday(year):
-    """Easter Sunday (the usual calculation for the Western church)."""
-    a = year % 19
-    b, c = divmod(year, 100)
-    d, e = divmod(b, 4)
-    f = (b + 8) // 25
-    g = (b - f + 1) // 3
-    h = (19 * a + b - d - g + 15) % 30
-    i, k = divmod(c, 4)
-    el = (32 + 2 * e + 2 * i - h - k) % 7
-    m = (a + 11 * h + 22 * el) // 451
-    month, day = divmod(h + el - 7 * m + 114, 31)
-    return datetime.date(year, month, day + 1)
+def ordinal(number):
+    """1st, 2nd, 3rd, 4th, ... 11th, 12th, 13th, ... 21st, 22nd."""
+    if 11 <= number % 100 <= 13:
+        return str(number) + "th"
+    return str(number) + {1: "st", 2: "nd", 3: "rd"}.get(number % 10, "th")
 
 
-def sunday_on_or_after(day):
-    return day + datetime.timedelta(days=(6 - day.weekday()) % 7)
+OCCASIONS = (
+    [ordinal(n) + " Sunday of Advent" for n in range(1, 5)]
+    + [ordinal(n) + " Day of Simbang Gabi" for n in range(1, 10)]
+    + [ordinal(n) + " Day of the Christmas Novena" for n in range(1, 10)]
+    + ["Christmas Day", "Holy Family", "Mary, Mother of God", "Epiphany of the Lord", "Baptism of the Lord"]
+    + ["Ash Wednesday"] + [ordinal(n) + " Sunday of Lent" for n in range(1, 6)]
+    + ["Palm Sunday", "Holy Thursday", "Good Friday"]
+    + ["Easter Vigil", "Easter Sunday"] + [ordinal(n) + " Sunday of Easter" for n in range(2, 7)]
+    + ["Ascension of the Lord", "Pentecost Sunday"]
+    + ["Trinity Sunday", "Body and Blood of Christ", "Sacred Heart of Jesus"]
+    + [ordinal(n) + " Sunday in Ordinary Time" for n in range(2, 34)] + ["Christ the King"]
+    + ["St Pedro Calungsod", "Saints Peter and Paul", "Assumption of Mary", "Exaltation of the Holy Cross",
+       "St Therese of Lisieux", "All Saints", "All Souls", "Dedication of the Lateran Basilica"]
+)
 
-
-def sunday_before(day):
-    return day - datetime.timedelta(days=day.weekday() + 1)
-
-
-def first_sunday_of_advent(year):
-    """The first Sunday of Advent in this calendar year (four Sundays before Christmas)."""
-    return sunday_before(datetime.date(year, 12, 25)) - 3 * ONE_WEEK
-
-
-def epiphany(year):
-    """In New Zealand: the Sunday between 2 and 8 January."""
-    return sunday_on_or_after(datetime.date(year, 1, 2))
-
-
-def baptism_of_the_lord(year):
-    """The Sunday after the Epiphany, or the Monday if the Epiphany is on 7 or 8 January."""
-    day = epiphany(year)
-    if day.day >= 7:
-        return day + ONE_DAY
-    return day + ONE_WEEK
-
-
-def holy_family(year):
-    """The Sunday between Christmas and New Year, or 30 December if there isn't one."""
-    for day in range(26, 32):
-        date = datetime.date(year, 12, day)
-        if date.weekday() == 6:
-            return date
-    return datetime.date(year, 12, 30)
-
-
-def ordinary_time_sunday(number, liturgical_year):
-    """The Nth Sunday in Ordinary Time. The year runs from Advent the year before."""
-    year = liturgical_year
-    easter = easter_sunday(year)
-    # Before Lent: the 2nd Sunday is the first Sunday after the Baptism of the Lord.
-    before_lent = sunday_on_or_after(baptism_of_the_lord(year) + ONE_DAY) + (number - 2) * ONE_WEEK
-    if number >= 2 and before_lent < easter - datetime.timedelta(days=46):
-        return before_lent
-    # After Pentecost: counted back from Christ the King, the 34th.
-    christ_the_king = first_sunday_of_advent(year) - ONE_WEEK
-    after_pentecost = christ_the_king - (34 - number) * ONE_WEEK
-    if after_pentecost > easter + datetime.timedelta(days=49):
-        return after_pentecost
-    return None
-
+# Words in a file name, and the occasion they mean. The first match wins.
+NAMED_OCCASIONS = [
+    ("ash wednesday", "Ash Wednesday"),
+    ("ash wed", "Ash Wednesday"),
+    ("rite of election", "1st Sunday of Lent"),
+    ("palm sunday", "Palm Sunday"),
+    ("holy thursday", "Holy Thursday"),
+    ("maundy thursday", "Holy Thursday"),
+    ("good friday", "Good Friday"),
+    ("easter vigil", "Easter Vigil"),
+    ("easter sunday", "Easter Sunday"),
+    ("ascension", "Ascension of the Lord"),
+    ("pentecost", "Pentecost Sunday"),
+    ("trinity", "Trinity Sunday"),
+    ("body and blood", "Body and Blood of Christ"),
+    ("corpus christi", "Body and Blood of Christ"),
+    ("sacred heart of jesus", "Sacred Heart of Jesus"),
+    ("christ the king", "Christ the King"),
+    ("holy family", "Holy Family"),
+    ("christmas day", "Christmas Day"),
+    ("nativity of the lord", "Christmas Day"),
+    ("mother of god", "Mary, Mother of God"),
+    ("new year", "Mary, Mother of God"),
+    ("epiphany", "Epiphany of the Lord"),
+    ("baptism of the lord", "Baptism of the Lord"),
+    ("pedro calungsod", "St Pedro Calungsod"),
+    ("peter and paul", "Saints Peter and Paul"),
+    ("assumption", "Assumption of Mary"),
+    ("holy cross", "Exaltation of the Holy Cross"),
+    ("saint therese", "St Therese of Lisieux"),
+    ("all saints", "All Saints"),
+    ("all souls", "All Souls"),
+    ("faithful departed", "All Souls"),
+    ("lateran", "Dedication of the Lateran Basilica"),
+]
 
 ORDINAL = r"(\d+)(?:st|nd|rd|th)?"
 
 
-def liturgical_date(name, liturgical_year):
-    """
-    The date a liturgy named like "3rd Sunday of Advent" or "Pentecost
-    Sunday" fell on, in the liturgical year that ends in liturgical_year
-    (so Advent and Christmas are in the year before). None if it isn't
-    a name we know.
-    """
-    year = liturgical_year
-    easter = easter_sunday(year)
-    text = re.sub(r"\bst\b\.?", "saint", name.lower().replace("&", "and"))
+def occasion_in_name(name):
+    """The occasion a file name is for, e.g. "15th Sunday in Ordinary Time", or "" if none."""
+    text = re.sub(r"\bst\b\.?", "saint", name.lower().replace("&", "and").replace("-", " "))
+    text = re.sub(r"\s+", " ", text)
 
-    def days_after_easter(days):
-        return easter + datetime.timedelta(days=days)
-
-    found = re.search(ORDINAL + r"\s+day\s+(?:of\s+)?(?:the\s+)?(simbang gabi|christmas novena)", text)
+    found = re.search(ORDINAL + r" day (?:of )?(?:the )?(simbang gabi|christmas novena)", text)
     if found:
-        return datetime.date(year - 1, 12, 15) + int(found.group(1)) * ONE_DAY
-    found = re.search(ORDINAL + r"\s+day\s+novena\s+to\s+saint therese", text)
-    if found:
-        return datetime.date(year, 9, 21) + int(found.group(1)) * ONE_DAY
+        number, which = found.group(1), found.group(2)
+    else:  # "Simbang Gabi Day 3"
+        found = re.search(r"(simbang gabi|christmas novena) day " + ORDINAL, text)
+        if found:
+            number, which = found.group(2), found.group(1)
+    if found and 1 <= int(number) <= 9:
+        which = "Simbang Gabi" if which == "simbang gabi" else "the Christmas Novena"
+        return ordinal(int(number)) + " Day of " + which
     if "novena" in text:
-        return None  # a whole novena: nine days, so no one date
-    found = re.search(ORDINAL + r"\s+sunday\s+(?:of|in)\s+ordinary\s+time", text)
+        return ""  # other novenas (e.g. to St Therese) are other services
+    found = re.search(ORDINAL + r" sun(?:day)? (?:of |in )?(?:the )?(?:ordinary time|ot)\b", text)
     if found:
-        return ordinary_time_sunday(int(found.group(1)), year)
-    found = re.search(ORDINAL + r"\s+sunday\s+(?:of|in)\s+(advent|lent|easter)", text)
+        number = int(found.group(1))
+        if number == 34:
+            return "Christ the King"
+        return ordinal(number) + " Sunday in Ordinary Time" if 2 <= number <= 33 else ""
+    found = re.search(ORDINAL + r" sun(?:day)? (?:of |in )?(?:the )?(advent|lent|easter)", text)
     if found:
         number, season = int(found.group(1)), found.group(2)
         if season == "advent":
-            return first_sunday_of_advent(year - 1) + (number - 1) * ONE_WEEK
+            return ordinal(number) + " Sunday of Advent" if 1 <= number <= 4 else ""
         if season == "lent":
-            return easter - (7 - number) * ONE_WEEK
-        if "ascension" in text:
-            return days_after_easter(42)  # kept on the 7th Sunday of Easter in New Zealand
-        return easter + (number - 1) * ONE_WEEK
-
-    named = [
-        ("ash wednesday", lambda: days_after_easter(-46)),
-        ("rite of election", lambda: days_after_easter(-42)),
-        ("palm sunday", lambda: days_after_easter(-7)),
-        ("easter sunday", lambda: easter),
-        ("ascension", lambda: days_after_easter(42)),
-        ("pentecost", lambda: days_after_easter(49)),
-        ("trinity", lambda: days_after_easter(56)),
-        ("body and blood", lambda: days_after_easter(63)),
-        ("corpus christi", lambda: days_after_easter(63)),
-        ("sacred heart of jesus", lambda: days_after_easter(68)),
-        ("christ the king", lambda: first_sunday_of_advent(year) - ONE_WEEK),
-        ("holy family", lambda: holy_family(year - 1)),
-        ("christmas day", lambda: datetime.date(year - 1, 12, 25)),
-        ("nativity of the lord", lambda: datetime.date(year - 1, 12, 25)),
-        ("mother of god", lambda: datetime.date(year, 1, 1)),
-        ("new year", lambda: datetime.date(year, 1, 1)),
-        ("epiphany", lambda: epiphany(year)),
-        ("baptism of the lord", lambda: baptism_of_the_lord(year)),
-        ("pedro calungsod", lambda: datetime.date(year, 4, 2)),
-        ("peter and paul", lambda: datetime.date(year, 6, 29)),
-        ("assumption", lambda: datetime.date(year, 8, 15)),
-        ("exaltation of the holy cross", lambda: datetime.date(year, 9, 14)),
-        ("saint therese", lambda: datetime.date(year, 10, 1)),
-        ("all saints", lambda: datetime.date(year, 11, 1)),
-        ("faithful departed", lambda: datetime.date(year, 11, 2)),
-        ("all souls", lambda: datetime.date(year, 11, 2)),
-        ("lateran", lambda: datetime.date(year, 11, 9)),
-    ]
-    for words, work_out in named:
+            if number == 6:
+                return "Palm Sunday"
+            return ordinal(number) + " Sunday of Lent" if 1 <= number <= 5 else ""
+        if number == 7 or "ascension" in text:
+            return "Ascension of the Lord"  # kept on the 7th Sunday of Easter in New Zealand
+        if number == 1:
+            return "Easter Sunday"
+        return ordinal(number) + " Sunday of Easter" if 2 <= number <= 6 else ""
+    for words, occasion in NAMED_OCCASIONS:
         if words in text:
-            return work_out()
-    return None
+            return occasion
+    return ""
 
 
-# Feasts on a set date. A parish sometimes keeps one on the nearest Sunday,
-# so the note asks you to look.
-SET_DATE_FEASTS = ["pedro calungsod", "peter and paul", "assumption", "holy cross", "therese",
-                   "all saints", "faithful departed", "all souls", "lateran"]
+def cycle_in(path):
+    """ "A" for a file in "Year A - 2026" (or named "... Yr A"), or ""."""
+    parts = re.split(r"[\\/]", path)
+    for part in parts[:-1] + [os.path.splitext(parts[-1])[0]]:
+        found = re.search(r"\b(?:year|yr)\s*([abc])\b", part, re.IGNORECASE)
+        if found:
+            return found.group(1).upper()
+    return ""
 
-
-# ---------------------------------------------------------------------------
-# Reading a file name
-# ---------------------------------------------------------------------------
 
 def date_in_name(name, liturgical_year):
     """A date written in the file name, e.g. 20260531, 29-03-2026, July 24 2026, 23-March."""
@@ -332,7 +296,8 @@ def church_in_name(name):
 
 def make_row(path, filename):
     stem, ending = os.path.splitext(filename)
-    row = {"status": "ok", "date": "", "title": tidy_title(stem), "church": church_in_name(stem), "note": "", "file": path}
+    row = {"status": "ok", "year": "", "occasion": "", "title": tidy_title(stem), "church": church_in_name(stem),
+           "date": "", "note": "", "file": path}
 
     if filename.startswith("~$") or filename.startswith("."):
         row.update(status="skip", note="autosave or hidden file")
@@ -344,27 +309,25 @@ def make_row(path, filename):
         row.update(status="skip", note="too big: Cloudflare's free plan takes files up to 95 MB")
         return row
 
-    liturgical_year = year_from_path(path)
-    date = date_in_name(stem, liturgical_year)
-    how = "date in the file name"
-    if date is None and liturgical_year:
-        date = liturgical_date(stem, liturgical_year)
-        how = "worked out from the name and the Year folder"
-    if date is None:
-        row["status"] = "check"
-        if liturgical_year:
-            row["note"] = "no date: type the date it was used (e.g. 2026-07-12), or skip"
-        else:
-            row["note"] = "no date and no Year folder: type the date it was used, or skip"
-        return row
-
-    row["date"] = date.isoformat()
-    row["note"] = how
-    if any(words in stem.lower() for words in SET_DATE_FEASTS) and how != "date in the file name":
-        row["note"] += "; a feast on a set date, change it if it was kept on a Sunday"
-    if "vigil" in stem.lower():
-        row["note"] += "; vigil Mass, dated by its Sunday"
+    row["occasion"] = occasion_in_name(stem)
+    row["year"] = cycle_in(path)
+    date = date_in_name(stem, year_from_path(path))
+    row["date"] = date.isoformat() if date else ""
+    row["note"] = describe(row)
     return row
+
+
+def describe(row):
+    """The note for a row: where it will be filed, and anything to look at."""
+    if row["occasion"] == "" and row["date"] != "":
+        return "the site files it under the Sunday or feast on its date (Other services if there isn't one)"
+    if row["occasion"] == "":
+        return "Other services (no Sunday or feast in the name)"
+    if row["occasion"] not in OCCASIONS:
+        return "not an occasion the site knows: use a name from OCCASIONS in the script, or leave it empty"
+    if row["year"] == "":
+        return "no Year folder: shows in every Year; type A, B or C in the year column to choose one"
+    return ""
 
 
 def scan(folder):
@@ -439,26 +402,36 @@ def read_typed_date(text):
 
 
 def keep_earlier_edits(rows, plan_path):
-    """Keeps what you typed in the last slides_plan.csv: status, date, title and church."""
+    """Keeps what you typed in the last slides_plan.csv: status, year, occasion, title, church and date."""
     if not os.path.exists(plan_path):
         return
     earlier = {row["file"]: row for row in read_csv(plan_path)}
     for row in rows:
         old = earlier.get(row["file"])
-        if old is None:
+        if old is None or row["status"] == "skip" and row["note"] != "":
             continue
-        row["status"] = old["status"].strip().lower() or row["status"]
-        row["date"] = read_typed_date(old["date"]) or row["date"]
-        row["title"] = old["title"].strip() or row["title"]
+        row["title"] = (old.get("title") or "").strip() or row["title"]
         if "church" in old:
             row["church"] = old["church"].strip()
-        row["note"] = old["note"]
+        if (old.get("status") or "").strip().lower() == "skip":
+            row["status"] = "skip"
+        if "occasion" not in old:
+            continue  # a plan from before PowerPoints were filed by occasion: its dates aren't kept
+        year = (old.get("year") or "").strip().upper()
+        row["year"] = year if year in ("A", "B", "C") else ""
+        row["occasion"] = (old.get("occasion") or "").strip()
+        row["date"] = read_typed_date(old.get("date") or "")
+        if row["status"] != "skip":
+            row["note"] = describe(row)
+            row["status"] = "check" if row["note"].startswith("not an occasion") else "ok"
 
 
 def write_plan(rows, plan_path):
-    rows.sort(key=lambda row: ({"check": 0, "ok": 1}.get(row["status"], 2), row["date"], row["title"].lower()))
+    order = {occasion: index for index, occasion in enumerate(OCCASIONS)}
+    rows.sort(key=lambda row: ({"check": 0, "ok": 1}.get(row["status"], 2), row["year"] or "Z",
+                               order.get(row["occasion"], len(order)), row["title"].lower()))
     with open(plan_path, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=COLUMNS)
+        writer = csv.DictWriter(f, fieldnames=COLUMNS, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -470,24 +443,25 @@ def write_plan(rows, plan_path):
 def upload(plan_path, site, token):
     """Makes the site's PowerPoint archive match your folders (see the top of this file)."""
     rows = read_csv(plan_path)
+    if rows and "occasion" not in rows[0]:
+        sys.exit(plan_path + ' is from before PowerPoints were filed by occasion. Run "scan" first.')
     plan = {row["file"]: row for row in rows}
 
     on_site = {}
     for line in ask_site(site, token, "GET", "/api/import/slides/done").splitlines():
-        parts = line.split("\t")
-        if len(parts) >= 6:
-            fingerprint, path, title, date, church, words_fingerprint = parts[:6]
+        parts = line.split("\t") + ["", ""]
+        if len(parts) >= 8:
+            fingerprint, path, title, date, church, words_fingerprint, cycle, occasion = parts[:8]
             on_site[path] = {"hash": fingerprint, "title": title, "date": date, "church": church,
-                             "words": words_fingerprint}
+                             "words": words_fingerprint, "year": cycle, "occasion": occasion}
 
     wanted = []
     for row in rows:
         if row["status"].strip().lower() != "ok" or not os.path.exists(row["file"]):
             continue
-        row["date"] = read_typed_date(row["date"])
-        if row["date"] == "":
-            print("  NO DATE, left alone:", row["file"])
-            continue
+        row["date"] = read_typed_date(row.get("date") or "")
+        row["year"] = (row.get("year") or "").strip().upper()
+        row["occasion"] = (row.get("occasion") or "").strip()
         if os.path.getsize(row["file"]) > BIGGEST_FILE_BYTES:
             print("  TOO BIG (over 95 MB, the free plan's limit)", row["file"])
             continue
@@ -514,15 +488,15 @@ def upload(plan_path, site, token):
                 to_send.append(row)
         elif site_copy["hash"] != row["fingerprint"]:
             to_send.append(row)
-        elif (site_copy["title"] != row["title"].strip() or site_copy["date"] != row["date"]
-              or site_copy["church"] != row.get("church", "").strip()):
+        elif any(site_copy[column] != row.get(column, "").strip()
+                 for column in ("title", "date", "church", "year", "occasion")):
             to_relabel.append(row)
     moved_from = {old_path for old_path, _ in to_move}
     to_delete = [path for path in gone if path not in moved_from]
 
     print("On the site:", len(on_site), "PowerPoints. Changes:")
     print("  new or edited:", len(to_send), " renamed or moved:", len(to_move),
-          " new title, date or church:", len(to_relabel), " to remove:", len(to_delete))
+          " refiled (year, occasion, title, church or date):", len(to_relabel), " to remove:", len(to_delete))
 
     failed = 0
     for old_path, row in to_move:
@@ -558,7 +532,7 @@ def upload(plan_path, site, token):
         print()
         print("These", len(to_delete), "PowerPoints are on the site but gone from your folders (or marked skip):")
         for path in to_delete[:30]:
-            print("   ", on_site[path]["date"], on_site[path]["title"])
+            print("   ", on_site[path]["title"])
         if len(to_delete) > 30:
             print("    ...and", len(to_delete) - 30, "more")
         answer = input("Remove them from the site? Type yes to remove, anything else to keep: ")
@@ -576,14 +550,15 @@ def send(site, token, address, row, extra):
     details = dict(extra)
     data = None
     if row is not None:
-        details.update(title=row["title"].strip(), date=row["date"], church=row.get("church", "").strip(),
-                       filename=os.path.basename(row["file"]))
+        details.update(title=row["title"].strip(), cycle=row["year"], occasion=row["occasion"], date=row["date"],
+                       church=row.get("church", "").strip(), filename=os.path.basename(row["file"]))
         if address.endswith("/file"):
             with open(row["file"], "rb") as f:
                 data = f.read()
     try:
         answer = ask_site(site, token, "POST", address + "?" + urllib.parse.urlencode(details), data)
-        print("  ", details.get("date", ""), details.get("title", details["source"]), "-", answer)
+        where = (details.get("occasion") or "Other services") + (", Year " + details["cycle"] if details.get("cycle") else "")
+        print("  ", details.get("title", details["source"]), "(" + where + ")" if row is not None else "", "-", answer)
         return 0
     except RuntimeError as error:
         print("  FAILED", details["source"], "-", error)
@@ -613,12 +588,15 @@ def main():
         counts = {}
         for row in rows:
             counts[row["status"]] = counts.get(row["status"], 0) + 1
+        filed = sum(1 for row in rows if row["status"] == "ok" and row["occasion"])
+        other = sum(1 for row in rows if row["status"] == "ok" and not row["occasion"])
         size = sum(os.path.getsize(row["file"]) for row in rows if row["status"] != "skip")
         print("Wrote", args.plan, "-", len(rows), "files.")
         print("  These take {:.2f} GB. Cloudflare's free storage is 10 GB, shared with the music.".format(size / 1e9))
-        for status in ("ok", "check", "skip"):
-            print("  " + status + ":", counts.get(status, 0))
-        print('Open', args.plan, 'in Excel, give the "check" rows a date (or skip them), save, then run "upload".')
+        print("  ok:", counts.get("ok", 0), "(" + str(filed), "filed under a Sunday or feast,", other, "under Other services)")
+        print("  check:", counts.get("check", 0))
+        print("  skip:", counts.get("skip", 0))
+        print('Look over', args.plan, 'in Excel if you like (fix any "check" rows), save, then run "upload".')
     else:
         token = os.environ.get("IMPORT_TOKEN") or getpass.getpass("Import token: ")
         upload(args.plan, args.site, token)

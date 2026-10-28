@@ -99,7 +99,9 @@ choir-site/
 │   ├── 0004_musescore_files.sql   adds MuseScore as a kind of song file
 │   ├── 0005_song_file_labels.sql  adds lyrics, slides, and a key and version per file
 │   ├── 0006_song_file_fingerprint.sql  lets the import spot edited files
-│   └── 0007_slides_and_prayers.sql  slides per event, and Prayers and services
+│   ├── 0007_slides_and_prayers.sql  slides per event, and Prayers and services
+│   ├── ...
+│   └── 0011_powerpoint_occasions.sql  PowerPoints filed by occasion and Year
 │
 ├── tools/
 │   └── import_music.py     bulk import of your music folders (see "Importing your music library")
@@ -119,6 +121,7 @@ choir-site/
     ├── files.ts            sends files from R2 to the browser
     ├── reading-parts.ts    the parts of each day's readings (Reading 1, Psalm, ...)
     ├── helpers.ts          small tools: dates, file sizes, form reading
+    ├── liturgy.ts          the Sundays and feasts PowerPoints are filed under
     ├── types.ts            the shape of each table row and setting
     ├── pages/
     │   ├── layout.tsx      header, menu and footer around every page
@@ -346,8 +349,8 @@ set lists link to them. Lyrics, slides and recordings follow `EVERYTHING_PUBLIC`
 
 - **Slides for a Mass or service:** open the event under Admin > Events and
   use **Slides** to upload its PowerPoint. It shows on the event's page (for
-  members) and in the PowerPoint archive under that date. PowerPoints
-  uploaded in the archive show on every event on the same date. Each
+  members). PowerPoints uploaded in the archive with a date are filed under
+  that day's Sunday or feast, and show on every event of that day. Each
   song's own slides are also linked from the set list.
 - **Prayers and services** (`/prayers`): the Creeds, the Prayer of St
   Francis, rosaries, special services. They're kept like songs (with
@@ -453,29 +456,42 @@ want the import switched on, delete the secret afterwards with
 ### Importing Sunday and service PowerPoints
 
 `tools/import_slides.py` does the same for the PowerPoints from Masses and
-services. They go in the PowerPoint archive under the date they were used,
-so each one shows on that day's events. It reads the folders in
-`SLIDES_FOLDERS` at the top of the script (`Sunday Mass Presentations`, with
-everything inside it) and any PowerPoints sitting loose in the folder you
-give it. It uses the same import code as the music.
+services. They're filed by **occasion and Year**, not by date: a deck for
+the 15th Sunday in Ordinary Time in the Year A folder shows on the page
+under Year A > Ordinary Time > 15th Sunday in Ordinary Time, and on every
+event that falls on that Sunday in a Year A (2026, 2029, ...). Decks for
+anything else (ordinations, retreats, rosaries...) go under **Other
+services**. It reads the folders in `SLIDES_FOLDERS` at the top of the
+script (`Sunday Mass Presentations`, with everything inside it) and any
+PowerPoints sitting loose in the folder you give it. It uses the same
+import code as the music.
 
 1. Scan: `python tools/import_slides.py scan "C:\Users\Elijah\Documents\Music"`
    This writes `slides_plan.csv`, one row per file.
-2. Open it in Excel. The script works out the date from the name and the
-   Year folder: `15th Sunday in Ordinary Time - St Teresa's Church` in
-   `Year A - 2026` becomes 12 July 2026. It knows the Sundays of Advent,
-   Lent, Easter and Ordinary Time, the big feasts (kept as in New Zealand,
-   e.g. the Epiphany and the Ascension on a Sunday) and the days of Simbang
-   Gabi. A date in the name works too (`20260531`, `29-03-2026`,
-   `July 24 2026`). Rows marked `check` have no date it could work out,
-   such as an ordination or a retreat: type the date, change `check` to
-   `ok`, or mark it `skip`. You can also change any title or date.
+2. Open it in Excel if you like. The script fills in:
+   - `year`: A, B or C, from the folder (`Year A - 2026`) or the name (`Yr A`).
+     Empty = shows in every Year.
+   - `occasion`: the Sunday or feast in the name, e.g. `15th Sunday in
+     Ordinary Time`, `Palm Sunday`, `3rd Day of Simbang Gabi`. It knows the
+     Sundays of Advent, Lent, Easter and Ordinary Time, the big feasts and
+     short forms like `15th Sun OT` or `Corpus Christi`. Empty = Other
+     services. The full list is `OCCASIONS` in the script (and in
+     `src/liturgy.ts` on the site; keep the two the same).
+   - `date`: only if the name has one (`20260531`, `July 24 2026`). A deck
+     with a date but no occasion is filed under the Sunday or feast of that
+     date. Most decks don't need one.
+
+   You can change any of them, or the title or church. Rows marked `check`
+   have an occasion the site doesn't know: fix it, empty it, or mark it
+   `skip`.
 3. Upload: `python tools/import_slides.py upload --site https://your-site`
 
 As with the music, run `scan` then `upload` again after any change: edited
-files replace the site's copy, moved ones are moved, a new title or date is
-updated, and removed ones are taken off once you type `yes`. A new year's
-folder just needs to be called `Year B - 2027` and so on.
+files replace the site's copy, moved ones are moved, a new title, Year,
+occasion or church is updated, and removed ones are taken off once you type
+`yes`. Decks uploaded before occasions existed are refiled by the next
+upload. A new year's folder just needs to be called `Year B - 2027` and so
+on.
 
 `upload` also sends the words on each deck's slides (song titles, lyrics,
 readings), and the `church` column is filled in from the name (the list
@@ -485,8 +501,8 @@ is `CHURCHES` at the top of the script). On the PowerPoints page:
   best match first, with the matching words highlighted. "teresas" finds
   "St Teresa's" and "maori" finds "Māori". Old `.ppt` files are found by
   title only, since their words can't be read without extra software.
-- **filters** narrow it to Year A, B or C, a season (worked out from the
-  date) and a church.
+- **filters** narrow it to Year A, B or C, a season (or Other services)
+  and a church.
 
 The search uses SQLite's built-in full-text search (FTS5). One catch:
 `wrangler d1 export` can't export a database with a search index in it.

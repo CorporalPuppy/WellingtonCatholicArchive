@@ -86,7 +86,17 @@ routes.get("/admin/powerpoints", async (c) => {
         <tbody>
           {powerpoints.map((powerpoint) => (
             <tr>
-              <td>{formatDate(powerpoint.service_date)}</td>
+              <td>
+                {powerpoint.occasion !== "" && (
+                  <>
+                    {powerpoint.occasion}
+                    {powerpoint.cycle !== "" && ", Year " + powerpoint.cycle}
+                    <br />
+                  </>
+                )}
+                {powerpoint.service_date !== "" && formatDate(powerpoint.service_date)}
+                {powerpoint.occasion === "" && powerpoint.service_date === "" && "Other services"}
+              </td>
               <td>
                 <a href={"/powerpoints/" + powerpoint.id + "/file?download=1"}>{powerpoint.title}</a>
                 <br />
