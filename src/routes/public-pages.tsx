@@ -56,7 +56,7 @@ routes.get("/", async (c) => {
         <h2>For singers</h2>
         {/* One card per part of the site. Music and PowerPoints only show for members. */}
         <div class="feature-grid">
-          <FeatureCard link="/events" title="Calendar" text="Every Mass and rehearsal, as a list or a month view." />
+          <FeatureCard link="/events" title="Calendar" text="Every Mass and rehearsal, by day, week, month or as a schedule." />
           <FeatureCard link="/readings" title="Daily readings" text="The readings for today, or any day you pick." />
           {canSeeMemberPages(c) && (
             <FeatureCard link="/music" title="Music library" text="Sheet music, chord charts, MuseScore files and recordings." />

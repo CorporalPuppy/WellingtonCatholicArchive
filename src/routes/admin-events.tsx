@@ -61,7 +61,7 @@ function readEventForm(form: Record<string, unknown>): EventDetails {
 }
 
 /** The form used both for new events and for editing one. */
-function EventForm(props: { action: string; event?: EventRow; parishes: ParishRow[]; buttonText: string }) {
+function EventForm(props: { action: string; event?: Partial<EventRow>; parishes: ParishRow[]; buttonText: string }) {
   const event = props.event;
   return (
     <form method="post" action={props.action}>
@@ -142,13 +142,23 @@ routes.get("/admin/events", async (c) => {
 // ---------------------------------------------------------------------------
 routes.get("/admin/events/new", async (c) => {
   const parishes = await getParishes(c.env.DB);
+  // The calendar's "More options" button fills in what was already typed:
+  // /admin/events/new?title=...&startsAt=2026-11-01T10:00&endsAt=...&parishId=2&isPublic=0
+  const parishId = Number(c.req.query("parishId") ?? "");
+  const startingValues: Partial<EventRow> = {
+    title: c.req.query("title") ?? "",
+    starts_at: c.req.query("startsAt") ?? "",
+    ends_at: c.req.query("endsAt") ?? "",
+    parish_id: parishId > 0 ? parishId : null,
+    is_public: c.req.query("isPublic") === "0" ? 0 : 1,
+  };
   return renderPage(
     c,
     "New event",
     <section class="narrow">
       <p><a class="back-link" href="/admin/events">Back to events</a></p>
       <h1>New event</h1>
-      <EventForm action="/admin/events/new" parishes={parishes} buttonText="Create event" />
+      <EventForm action="/admin/events/new" event={startingValues} parishes={parishes} buttonText="Create event" />
     </section>,
   );
 });

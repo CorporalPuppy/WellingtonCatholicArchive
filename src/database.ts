@@ -75,31 +75,60 @@ export async function getUpcomingEvents(
   return result.results;
 }
 
-/**
- * Events between two dates (both "YYYY-MM-DD", the second one not
- * included), soonest first. Used by the month view of the calendar.
- */
-export async function getEventsBetween(
-  db: D1Database,
-  fromDate: string,
-  toDate: string,
-  includePrivate: boolean,
-  parishId: number | null,
-): Promise<EventRow[]> {
-  let sql = SELECT_EVENTS + " WHERE events.starts_at >= ? AND events.starts_at < ?";
-  const values: (string | number)[] = [fromDate, toDate];
+/** An event as the calendar page gets it, with how many songs are on its set list. */
+export type CalendarEventRow = EventRow & { song_count: number };
 
+/**
+ * Events that are on at some point between two dates (both "YYYY-MM-DD",
+ * the second one not included), for the calendar's Day, Week, Month and
+ * Schedule views. An event that started before "from" but is still going
+ * (it ends on or after "from") is included too.
+ */
+export async function getEventsForCalendar(
+  db: D1Database,
+  from: string,
+  to: string,
+  includePrivate: boolean,
+): Promise<CalendarEventRow[]> {
+  // "starts_at >= a month before" lets the database use its index on
+  // starts_at instead of reading every event. (No event lasts a month.)
+  let sql = `SELECT events.*, parishes.name AS parish_name, parishes.address AS parish_address,
+      (SELECT COUNT(*) FROM setlist_items WHERE setlist_items.event_id = events.id) AS song_count
+    FROM events
+    LEFT JOIN parishes ON parishes.id = events.parish_id
+    WHERE events.starts_at >= ? AND events.starts_at < ?
+      AND COALESCE(NULLIF(events.ends_at, ''), events.starts_at) >= ?`;
   if (!includePrivate) {
     sql = sql + " AND events.is_public = 1";
   }
-  if (parishId !== null) {
-    sql = sql + " AND events.parish_id = ?";
-    values.push(parishId);
-  }
   sql = sql + " ORDER BY events.starts_at";
-
-  const result = await db.prepare(sql).bind(...values).all<EventRow>();
+  const result = await db.prepare(sql).bind(addDaysToDate(from, -31), to, from).all<CalendarEventRow>();
   return result.results;
+}
+
+/** One event in the same shape as getEventsForCalendar gives. */
+export async function getCalendarEvent(db: D1Database, eventId: number): Promise<CalendarEventRow | null> {
+  return await db
+    .prepare(
+      `SELECT events.*, parishes.name AS parish_name, parishes.address AS parish_address,
+        (SELECT COUNT(*) FROM setlist_items WHERE setlist_items.event_id = events.id) AS song_count
+      FROM events
+      LEFT JOIN parishes ON parishes.id = events.parish_id
+      WHERE events.id = ?`,
+    )
+    .bind(eventId)
+    .first<CalendarEventRow>();
+}
+
+/** Moves an event (or changes how long it is) without touching anything else. */
+export async function updateEventTimes(db: D1Database, eventId: number, startsAt: string, endsAt: string | null): Promise<void> {
+  await db.prepare("UPDATE events SET starts_at = ?, ends_at = ? WHERE id = ?").bind(startsAt, endsAt, eventId).run();
+}
+
+/** "2026-11-01" plus -31 days gives "2026-10-01". */
+function addDaysToDate(date: string, days: number): string {
+  const moved = new Date(Date.parse(date + "T00:00:00Z") + days * 24 * 60 * 60 * 1000);
+  return moved.toISOString().slice(0, 10);
 }
 
 /** Every event, newest first (for the admin pages). */

@@ -129,7 +129,7 @@ choir-site/
     │   └── render.tsx      shortcut to show a page inside the layout
     └── routes/             one file per area of the site
         ├── public-pages.tsx   home page, one event with its set list
-        ├── calendar.tsx       the calendar: "Upcoming" list and "Month" grid
+        ├── calendar.tsx       the calendar page (drawn by public/calendar.js) and its event API
         ├── login.tsx          log in, log out, first-time setup
         ├── account.tsx        change your own password
         ├── music.tsx          music library and file downloads

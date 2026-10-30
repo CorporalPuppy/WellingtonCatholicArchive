@@ -1,103 +1,176 @@
 // ===========================================================================
-// The calendar, with two ways to look at it:
+// The calendar, made to look and work like Google Calendar.
 //
-//   GET /events                    "Upcoming": every event from today on,
-//                                  in order, however far apart they are
-//   GET /events?view=month         "Month": a grid like Google Calendar
-//   GET /events?view=month&month=2026-12   a particular month
+//   GET /events                          the calendar page
+//   GET /events?view=week&date=2026-11-03   open on a view and a day
+//                                        (view = day, week, month or schedule)
+//   GET /events?parish=3                 show one parish only
 //
-// Both can show one parish only: add &parish=3
+// The page itself is a frame; public/calendar.js draws the views in the
+// browser and fetches the events it needs from this small "API":
+//
+//   GET    /api/calendar/events?from=2026-11-01&to=2026-12-01   events (JSON)
+//   POST   /api/calendar/events          admins: add an event
+//   PATCH  /api/calendar/events/:id      admins: move it, or change how long it is
+//   DELETE /api/calendar/events/:id      admins: delete it
+//
+// Old addresses (?view=list and ?view=month&month=2026-12) still work.
 // ===========================================================================
 
 import { Hono } from "hono";
-import { getEventsBetween, getParishes, getUpcomingEvents } from "../database";
-import { canSeeMemberPages, getTodaysDate } from "../helpers";
+import type { Context } from "hono";
+import {
+  createEvent,
+  deleteEvent,
+  getCalendarEvent,
+  getEventsForCalendar,
+  getParishes,
+  getUpcomingEvents,
+  updateEventTimes,
+} from "../database";
+import { canSeeMemberPages, getTodaysDate, isAdmin, isValidDate } from "../helpers";
+import { requireAdmin } from "../middleware";
 import { EventList } from "../pages/event-list";
 import { renderPage } from "../pages/render";
-import type { AppEnv, EventRow, ParishRow } from "../types";
+import type { AppEnv, EventRow } from "../types";
 
 const routes = new Hono<AppEnv>();
 
+// ---------------------------------------------------------------------------
+// The page
+// ---------------------------------------------------------------------------
 routes.get("/events", async (c) => {
   const today = getTodaysDate(c.env.TIMEZONE);
   const parishes = await getParishes(c.env.DB);
-  const includePrivate = canSeeMemberPages(c);
+  const admin = isAdmin(c);
 
-  // Which parish was picked in the menu ("" means every parish).
-  const parishChoice = c.req.query("parish") ?? "";
-  const parishId = parishChoice === "" ? null : Number(parishChoice);
-
-  // Which view: "list" (the default) or "month".
-  const view = c.req.query("view") === "month" ? "month" : "list";
-
-  // For the month view: which month ("2026-11"). Defaults to this month.
-  let month = c.req.query("month") ?? today.slice(0, 7);
-  if (!/^\d{4}-\d{2}$/.test(month)) {
-    month = today.slice(0, 7);
+  // Which view to open on. "" lets calendar.js choose (the last view this
+  // browser used, or Month on a computer and Schedule on a phone).
+  const viewChoice = c.req.query("view") ?? "";
+  let view = "";
+  if (viewChoice === "day" || viewChoice === "week" || viewChoice === "month" || viewChoice === "schedule") {
+    view = viewChoice;
+  } else if (viewChoice === "list") {
+    view = "schedule"; // the old "Upcoming" list
   }
 
-  let content;
-  if (view === "list") {
-    const events = await getUpcomingEvents(c.env.DB, today, includePrivate, parishId);
-    content = <UpcomingList events={events} />;
-  } else {
-    const firstDay = month + "-01";
-    const firstDayOfNextMonth = addMonths(month, 1) + "-01";
-    const events = await getEventsBetween(c.env.DB, firstDay, firstDayOfNextMonth, includePrivate, parishId);
-    content = <MonthGrid month={month} today={today} events={events} parishChoice={parishChoice} />;
+  // Which day to open on. The old month view used ?month=2026-12.
+  let date = c.req.query("date") ?? "";
+  const oldMonth = c.req.query("month") ?? "";
+  if (date === "" && /^\d{4}-\d{2}$/.test(oldMonth)) {
+    date = oldMonth + "-01";
   }
+  if (!isValidDate(date)) {
+    date = today;
+  }
+
+  // The "calendars" down the side, one per parish, like Google's
+  // "My calendars". Events with no parish go in "Other".
+  const calendars = parishes.map((parish) => ({ key: "p" + parish.id, parishId: parish.id, name: parish.name }));
+  calendars.push({ key: "other", parishId: 0, name: "Other" });
+
+  // For visitors without JavaScript: the plain upcoming list.
+  const upcoming = await getUpcomingEvents(c.env.DB, today, canSeeMemberPages(c), null);
 
   return renderPage(
     c,
     "Calendar",
     <>
-      <h1>Calendar</h1>
-      <CalendarControls view={view} month={month} parishes={parishes} parishChoice={parishChoice} />
-      {content}
+      <link rel="stylesheet" href="/calendar.css" />
+      <div
+        class="gcal"
+        id="gcal"
+        data-today={today}
+        data-timezone={c.env.TIMEZONE}
+        data-admin={admin ? "yes" : "no"}
+        data-view={view}
+        data-date={date}
+        data-parish={c.req.query("parish") ?? ""}
+        data-calendars={JSON.stringify(calendars)}
+      >
+        <CalendarFrame admin={admin} />
+      </div>
+      <noscript>
+        <section class="gcal-noscript">
+          <h1>Calendar</h1>
+          <UpcomingList events={upcoming} />
+        </section>
+      </noscript>
+      <script src="/calendar.js" defer></script>
     </>,
   );
 });
 
-// ---------------------------------------------------------------------------
-// The "Upcoming" / "Month" switch and the parish menu
-// ---------------------------------------------------------------------------
-function CalendarControls(props: { view: string; month: string; parishes: ParishRow[]; parishChoice: string }) {
-  // Keep the chosen parish when switching views.
-  const parishPart = props.parishChoice === "" ? "" : "&parish=" + props.parishChoice;
-
+/**
+ * The parts of the page that stay put: the top bar, the side panel and an
+ * empty space for the view. calendar.js fills them in.
+ */
+function CalendarFrame(props: { admin: boolean }) {
   return (
-    <div class="calendar-controls">
-      <nav class="view-switch" aria-label="Calendar view">
-        <a href={"/events?view=list" + parishPart} class={props.view === "list" ? "active" : ""}>
-          Upcoming
-        </a>
-        <a href={"/events?view=month&month=" + props.month + parishPart} class={props.view === "month" ? "active" : ""}>
-          Month
-        </a>
-      </nav>
+    <>
+      <header class="gcal-top">
+        <button type="button" class="gcal-icon-button" id="gcal-menu" aria-label="Show or hide the side panel" title="Main menu">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
+        </button>
+        <h1 class="gcal-title">Calendar</h1>
+        <button type="button" class="gcal-today" id="gcal-today" title="Today (T)">Today</button>
+        <span class="gcal-arrows">
+          <button type="button" class="gcal-icon-button" id="gcal-prev" aria-label="Previous" title="Previous (K)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+          </button>
+          <button type="button" class="gcal-icon-button" id="gcal-next" aria-label="Next" title="Next (J)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>
+          </button>
+        </span>
+        <h2 class="gcal-range" id="gcal-range" aria-live="polite"></h2>
+        <span class="gcal-spacer"></span>
+        <div class="gcal-view-menu">
+          <button type="button" class="gcal-view-button" id="gcal-view-button" aria-haspopup="menu" aria-expanded="false">
+            <span id="gcal-view-name">Month</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5" /></svg>
+          </button>
+          <ul class="gcal-menu" id="gcal-view-list" role="menu" hidden>
+            <li><button type="button" role="menuitem" data-view="day">Day <kbd>D</kbd></button></li>
+            <li><button type="button" role="menuitem" data-view="week">Week <kbd>W</kbd></button></li>
+            <li><button type="button" role="menuitem" data-view="month">Month <kbd>M</kbd></button></li>
+            <li><button type="button" role="menuitem" data-view="schedule">Schedule <kbd>A</kbd></button></li>
+          </ul>
+        </div>
+      </header>
 
-      {props.parishes.length > 0 && (
-        <form method="get" action="/events" class="search">
-          {/* Remember the view and month when the parish changes. */}
-          <input type="hidden" name="view" value={props.view} />
-          <input type="hidden" name="month" value={props.month} />
-          <select name="parish" aria-label="Parish">
-            <option value="">All parishes</option>
-            {props.parishes.map((parish) => (
-              <option value={String(parish.id)} selected={String(parish.id) === props.parishChoice}>
-                {parish.name}
-              </option>
-            ))}
-          </select>
-          <button type="submit">Show</button>
-        </form>
+      <div class="gcal-body">
+        <aside class="gcal-side" id="gcal-side">
+          {props.admin && (
+            <button type="button" class="gcal-create" id="gcal-create" title="Create (C)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+              Create
+            </button>
+          )}
+          <div class="gcal-mini" id="gcal-mini"></div>
+          <section class="gcal-calendars">
+            <h3>Calendars</h3>
+            <ul id="gcal-calendar-list"></ul>
+          </section>
+        </aside>
+        <div class="gcal-scrim" id="gcal-scrim" hidden></div>
+        <div class="gcal-main" id="gcal-main"></div>
+      </div>
+
+      {/* On phones: the round "+" button in the corner, like the Google Calendar app. */}
+      {props.admin && (
+        <button type="button" class="gcal-fab" id="gcal-fab" aria-label="Create an event">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        </button>
       )}
-    </div>
+      <div class="gcal-popover" id="gcal-popover" role="dialog" hidden></div>
+      <div class="gcal-toast" id="gcal-toast" role="status" hidden></div>
+    </>
   );
 }
 
 // ---------------------------------------------------------------------------
 // "Upcoming": the next events in order, with a heading for each month
+// (only shown if JavaScript is switched off)
 // ---------------------------------------------------------------------------
 function UpcomingList(props: { events: EventRow[] }) {
   if (props.events.length === 0) {
@@ -133,94 +206,6 @@ function groupByMonth(events: EventRow[]): { name: string; events: EventRow[] }[
   return groups;
 }
 
-// ---------------------------------------------------------------------------
-// "Month": a grid of days, Monday to Sunday, like Google Calendar
-// ---------------------------------------------------------------------------
-function MonthGrid(props: { month: string; today: string; events: EventRow[]; parishChoice: string }) {
-  const parishPart = props.parishChoice === "" ? "" : "&parish=" + props.parishChoice;
-  const days = daysToShow(props.month);
-
-  return (
-    <section class="month-view">
-      <div class="month-nav">
-        <a class="button button-small button-secondary" href={"/events?view=month&month=" + addMonths(props.month, -1) + parishPart}>&larr; Previous</a>
-        <h2>{monthName(props.month)}</h2>
-        <a class="button button-small button-secondary" href={"/events?view=month&month=" + addMonths(props.month, 1) + parishPart}>Next &rarr;</a>
-      </div>
-      {props.month !== props.today.slice(0, 7) && (
-        <p class="month-today-link">
-          <a class="button button-small button-secondary" href={"/events?view=month&month=" + props.today.slice(0, 7) + parishPart}>Back to this month</a>
-        </p>
-      )}
-
-      <div class="month-grid">
-        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((dayName) => (
-          <div class="month-weekday">{dayName}</div>
-        ))}
-
-        {days.map((day) => {
-          // The events on this day.
-          const eventsToday = props.events.filter((event) => event.starts_at.slice(0, 10) === day);
-          // Days from the month before/after are shown faded.
-          let cellClass = "month-day";
-          if (day.slice(0, 7) !== props.month) cellClass += " other-month";
-          if (day === props.today) cellClass += " today";
-
-          return (
-            <div class={cellClass}>
-              <span class="day-number">{Number(day.slice(8, 10))}</span>
-              {eventsToday.map((event) => (
-                <a href={"/events/" + event.id} class="month-event" title={event.title}>
-                  <span class="month-event-time">{event.starts_at.slice(11, 16)}</span> {event.title}
-                </a>
-              ))}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* On phones the grid is too small for titles, so list the month's events underneath. */}
-      <div class="phone-only">
-        <h2 class="month-heading">This month</h2>
-        <EventList events={props.events} />
-      </div>
-    </section>
-  );
-}
-
-/**
- * Every date the month grid shows, as "YYYY-MM-DD": whole weeks from the
- * Monday on or before the 1st, to the Sunday on or after the last day.
- */
-function daysToShow(month: string): string[] {
-  const year = Number(month.slice(0, 4));
-  const monthNumber = Number(month.slice(5, 7)); // 1 to 12
-
-  const firstDay = new Date(Date.UTC(year, monthNumber - 1, 1));
-  const lastDay = new Date(Date.UTC(year, monthNumber, 0)); // day 0 of next month = last day of this one
-
-  // getUTCDay(): Sunday = 0, Monday = 1 ... We want weeks to start on Monday.
-  const daysBackToMonday = (firstDay.getUTCDay() + 6) % 7;
-  const daysOnToSunday = (7 - lastDay.getUTCDay()) % 7;
-
-  const start = new Date(Date.UTC(year, monthNumber - 1, 1 - daysBackToMonday));
-  const end = new Date(Date.UTC(year, monthNumber - 1, lastDay.getUTCDate() + daysOnToSunday));
-
-  const days: string[] = [];
-  for (let day = start; day <= end; day = new Date(day.getTime() + 24 * 60 * 60 * 1000)) {
-    days.push(day.toISOString().slice(0, 10));
-  }
-  return days;
-}
-
-/** addMonths("2026-12", 1) gives "2027-01". */
-function addMonths(month: string, howMany: number): string {
-  const year = Number(month.slice(0, 4));
-  const monthNumber = Number(month.slice(5, 7));
-  const moved = new Date(Date.UTC(year, monthNumber - 1 + howMany, 1));
-  return moved.toISOString().slice(0, 7);
-}
-
 /** "2026-11" -> "November 2026" */
 function monthName(month: string): string {
   const year = Number(month.slice(0, 4));
@@ -228,5 +213,93 @@ function monthName(month: string): string {
   const formatter = new Intl.DateTimeFormat("en-NZ", { timeZone: "UTC", month: "long", year: "numeric" });
   return formatter.format(new Date(Date.UTC(year, monthNumber - 1, 1)));
 }
+
+// ---------------------------------------------------------------------------
+// The API that calendar.js talks to
+// ---------------------------------------------------------------------------
+
+// The longest stretch one request may ask for. The views need at most six
+// weeks (Month) or a few months (Schedule); this stops anyone asking for
+// years at once and using up the free database reads.
+const MOST_DAYS_PER_REQUEST = 200;
+
+routes.get("/api/calendar/events", async (c) => {
+  const from = c.req.query("from") ?? "";
+  const to = c.req.query("to") ?? "";
+  if (!isValidDate(from) || !isValidDate(to) || to <= from) {
+    return c.json({ error: "Please give from and to dates, like ?from=2026-11-01&to=2026-12-01" }, 400);
+  }
+  const days = (Date.parse(to) - Date.parse(from)) / (24 * 60 * 60 * 1000);
+  if (days > MOST_DAYS_PER_REQUEST) {
+    return c.json({ error: "Please ask for " + MOST_DAYS_PER_REQUEST + " days or fewer at a time." }, 400);
+  }
+  const events = await getEventsForCalendar(c.env.DB, from, to, canSeeMemberPages(c));
+  return c.json({ events: events });
+});
+
+routes.use("/api/calendar/events/*", requireAdmin);
+routes.post("/api/calendar/events", requireAdmin);
+
+// A time as the date-and-time picker gives it: "2026-11-01T10:00".
+const LOCAL_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+
+/**
+ * Checks a change came from our own calendar page. (The usual protection
+ * against other websites, "csrf" in index.tsx, only looks at forms.)
+ */
+function fromOurOwnSite(c: Context<AppEnv>): boolean {
+  const origin = c.req.header("Origin");
+  return origin === undefined || origin === new URL(c.req.url).origin;
+}
+
+/** Reads the start and end times sent by calendar.js, or null if they don't make sense. */
+function readTimes(body: Record<string, unknown>): { startsAt: string; endsAt: string } | null {
+  const startsAt = typeof body.startsAt === "string" ? body.startsAt : "";
+  const endsAt = typeof body.endsAt === "string" ? body.endsAt : "";
+  if (!LOCAL_TIME.test(startsAt) || !isValidDate(startsAt.slice(0, 10))) return null;
+  if (endsAt !== "" && (!LOCAL_TIME.test(endsAt) || endsAt < startsAt)) return null;
+  return { startsAt: startsAt, endsAt: endsAt };
+}
+
+// Add an event (the quick "Add title" box).
+routes.post("/api/calendar/events", async (c) => {
+  if (!fromOurOwnSite(c)) return c.json({ error: "Not allowed." }, 403);
+  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}) as Record<string, unknown>);
+  const times = readTimes(body);
+  if (times === null) return c.json({ error: "Please check the start and end times." }, 400);
+
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  const parishId = typeof body.parishId === "number" && body.parishId > 0 ? body.parishId : null;
+  const newId = await createEvent(c.env.DB, {
+    title: title === "" ? "(No title)" : title,
+    description: "",
+    parishId: parishId,
+    location: "",
+    startsAt: times.startsAt,
+    endsAt: times.endsAt,
+    isPublic: body.isPublic !== false,
+  });
+  return c.json({ event: await getCalendarEvent(c.env.DB, newId) });
+});
+
+// Move an event, or change how long it is (dragging it on the calendar).
+routes.patch("/api/calendar/events/:id", async (c) => {
+  if (!fromOurOwnSite(c)) return c.json({ error: "Not allowed." }, 403);
+  const eventId = Number(c.req.param("id"));
+  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}) as Record<string, unknown>);
+  const times = readTimes(body);
+  if (times === null) return c.json({ error: "Please check the start and end times." }, 400);
+  if ((await getCalendarEvent(c.env.DB, eventId)) === null) return c.json({ error: "That event doesn't exist." }, 404);
+
+  await updateEventTimes(c.env.DB, eventId, times.startsAt, times.endsAt === "" ? null : times.endsAt);
+  return c.json({ event: await getCalendarEvent(c.env.DB, eventId) });
+});
+
+// Delete an event (the bin button on its pop-up).
+routes.delete("/api/calendar/events/:id", async (c) => {
+  if (!fromOurOwnSite(c)) return c.json({ error: "Not allowed." }, 403);
+  await deleteEvent(c.env.DB, Number(c.req.param("id")));
+  return c.json({ deleted: true });
+});
 
 export default routes;
