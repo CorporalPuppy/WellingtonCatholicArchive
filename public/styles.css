@@ -1056,3 +1056,104 @@ canvas.score-cover-preview.shown { opacity: 0.22; }
   background: transparent;
   border: 1px solid var(--accent-soft);
 }
+
+/* ---- Admin: the event page, laid out like Google Calendar's ---- */
+
+main:has(.gedit) { max-width: 1180px; }
+.gedit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px 40px;
+  font-size: 15px;
+}
+.gedit-with-side { grid-template-columns: minmax(0, 1fr) 360px; }
+.gedit-form { display: contents; } /* its parts sit in the grid directly */
+.gedit-top, .gedit-when, .gedit-form > .notice { grid-column: 1 / -1; }
+.gedit-details { grid-column: 1; }
+.gedit-side { grid-column: 2; grid-row: 3 / span 5; display: grid; gap: 16px; align-content: start; }
+.gedit-with-side .gedit-form > .notice { grid-column: 1; }
+
+/* Top: close, big title, Save */
+.gedit-top { display: flex; align-items: center; gap: 12px; }
+.gedit-icon {
+  width: 22px; height: 22px; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.gedit .gedit-icon-button {
+  display: inline-grid; place-items: center; flex: none;
+  width: 44px; height: 44px; padding: 0; border-radius: 50%;
+  background: none; border: 0; color: var(--muted); cursor: pointer;
+}
+.gedit .gedit-icon-button:hover { background: var(--accent-soft); color: var(--text); filter: none; }
+form input.gedit-title {
+  flex: 1; min-width: 0; margin: 0;
+  font: inherit; font-size: 1.75rem; font-weight: 400;
+  color: var(--text); background: var(--accent-soft);
+  border: 0; border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0;
+  padding: 10px 14px;
+}
+form input.gedit-title:focus { outline: none; border-bottom-color: var(--accent); }
+.gedit-top-buttons { display: flex; align-items: center; gap: 8px; flex: none; }
+.gedit-top-buttons .button-small { padding: 9px 22px; }
+
+/* The date and times, on one line (wraps on phones) */
+.gedit-when { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-left: 56px; margin-bottom: 8px; }
+form .gedit-when input {
+  display: inline-block; width: auto; margin: 0;
+  padding: 8px 10px; border: 0; border-radius: 6px; background: var(--accent-soft);
+}
+.gedit-to { color: var(--muted); }
+
+/* "Event details", with an icon down the left of each row */
+.gedit-tab {
+  display: inline-block; font-size: 0.95rem; font-weight: 600; color: var(--accent);
+  margin: 8px 0 12px 56px; padding: 0 2px 8px; border-bottom: 3px solid var(--accent);
+  letter-spacing: 0;
+}
+.gedit-row { display: flex; align-items: flex-start; gap: 22px; padding: 8px 0 8px 12px; }
+.gedit-row > span { color: var(--muted); padding-top: 9px; display: inline-flex; }
+.gedit-row-body { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+form .gedit-row-body input[type="text"], form .gedit-row-body select, form .gedit-row-body textarea {
+  margin: 0; flex: 1 1 260px; border: 0; background: var(--accent-soft);
+}
+form .gedit-row-body select { flex: 1 1 220px; width: auto; }
+.gedit-swatch { width: 16px; height: 16px; border-radius: 4px; flex: none; }
+.gedit-hint { font-size: 0.85rem; color: var(--muted); }
+form label.gedit-check { display: flex; align-items: center; gap: 10px; font-weight: 400; margin: 9px 0 0; cursor: pointer; }
+form label.gedit-check input { width: 18px; height: 18px; margin: 0; }
+.gedit-later { margin-left: 56px; }
+
+/* Right-hand column: set list, slides, roster */
+.gedit-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px 16px; }
+.gedit-card h2 { display: flex; align-items: center; gap: 10px; font-size: 1rem; margin: 0 0 10px; letter-spacing: 0; }
+.gedit-card h2 .gedit-icon { color: var(--muted); width: 20px; height: 20px; }
+.gedit-card p { margin: 0 0 10px; }
+.gedit-small { font-size: 0.85rem; }
+.gedit-list { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 2px; counter-reset: item; font-size: 0.95rem; }
+.gedit-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 4px 4px 8px; border-radius: 8px; }
+.gedit-list li:hover { background: var(--accent-soft); }
+ol.gedit-list li::before { counter-increment: item; content: counter(item); color: var(--muted); font-size: 0.8rem; width: 16px; flex: none; }
+ol.gedit-list li > span { flex: 1; }
+.gedit .gedit-remove {
+  display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0;
+  border-radius: 50%; background: none; color: var(--muted); border: 0; cursor: pointer; flex: none;
+}
+.gedit .gedit-remove:hover { background: var(--border); color: var(--danger); filter: none; }
+.gedit-remove .gedit-icon { width: 16px; height: 16px; }
+.gedit-add { display: grid; gap: 8px; margin: 0; }
+form.gedit-add input, form.gedit-add select { margin: 0; padding: 8px 10px; font-size: 0.9rem; }
+.gedit-add button { justify-self: end; }
+
+@media (max-width: 900px) {
+  .gedit-with-side { grid-template-columns: minmax(0, 1fr); }
+  .gedit-side, .gedit-with-side .gedit-form > .notice { grid-column: 1; grid-row: auto; }
+}
+@media (max-width: 600px) {
+  .gedit-top { flex-wrap: wrap; gap: 8px; }
+  form input.gedit-title { order: 3; flex-basis: 100%; font-size: 1.4rem; }
+  .gedit-top-buttons { margin-left: auto; }
+  .gedit-when { padding-left: 0; }
+  .gedit-tab { margin-left: 0; }
+  .gedit-row { padding-left: 0; gap: 14px; }
+  .gedit-later { margin-left: 0; }
+}

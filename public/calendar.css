@@ -543,3 +543,8 @@ main:has(.gcal) { max-width: none; padding: 0; }
   .gcal-fab svg { width: 28px; height: 28px; stroke-width: 2.4; }
   .gcal-toast { left: 12px; right: 12px; bottom: calc(88px + env(safe-area-inset-bottom)); max-width: none; justify-content: space-between; }
 }
+
+/* Admins: links under the list of calendars */
+.gcal-side-links { display: flex !important; flex-direction: column; gap: 6px; margin: 20px 6px 0; font-size: 13px; }
+.gcal-side-links a { color: var(--muted); }
+.gcal-side-links a:hover { color: var(--accent); }

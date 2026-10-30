@@ -151,6 +151,12 @@ function CalendarFrame(props: { admin: boolean }) {
             <h3>Calendars</h3>
             <ul id="gcal-calendar-list"></ul>
           </section>
+          {props.admin && (
+            <p class="gcal-side-links">
+              <a href="/admin/events?list=1">All events as a list</a>
+              <a href="/admin/parishes">Edit parishes</a>
+            </p>
+          )}
         </aside>
         <div class="gcal-scrim" id="gcal-scrim" hidden></div>
         <div class="gcal-main" id="gcal-main"></div>
