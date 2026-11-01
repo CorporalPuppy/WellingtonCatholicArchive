@@ -77,7 +77,12 @@ routes.post("/login", async (c) => {
   }
 
   if (!authResponse.ok) {
-    const page = <LoginForm next={next} error="That email and password didn't match. Please try again." />;
+    // Better Auth answers 403 for an account an admin has turned off.
+    const error =
+      authResponse.status === 403
+        ? "This account has been turned off. Please ask an admin."
+        : "That email and password didn't match. Please try again.";
+    const page = <LoginForm next={next} error={error} />;
     return renderPage(c, "Login", page, 400);
   }
   return redirectWithCookies(next, authResponse);

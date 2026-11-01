@@ -50,7 +50,9 @@
 		// "yes" = everyone can see music, PowerPoints, rosters, set lists
 		//         and members-only events, without logging in.
 		// "no"  = only logged-in members can see those.
-		// Admin pages always need an admin login either way.
+		// Admin pages always need a login either way.
+		// CHOIR_NAME and EVERYTHING_PUBLIC are only starting values: once an
+		// admin saves Admin > Site settings on the website, those are used.
 		"EVERYTHING_PUBLIC": "yes",
 		// Which local calendar Universalis uses for the daily readings.
 		// "" = the General Roman Calendar. To use a local one, choose it on

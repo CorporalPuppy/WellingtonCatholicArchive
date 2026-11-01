@@ -28,8 +28,8 @@ import {
   getUpcomingEvents,
   updateEventTimes,
 } from "../database";
-import { canSeeMemberPages, getTodaysDate, isAdmin, isValidDate } from "../helpers";
-import { requireAdmin } from "../middleware";
+import { canManage, canSeeMemberPages, getTodaysDate, isValidDate } from "../helpers";
+import { requirePermission } from "../middleware";
 import { EventList } from "../pages/event-list";
 import { renderPage } from "../pages/render";
 import type { AppEnv, EventRow } from "../types";
@@ -42,7 +42,7 @@ const routes = new Hono<AppEnv>();
 routes.get("/events", async (c) => {
   const today = getTodaysDate(c.env.TIMEZONE);
   const parishes = await getParishes(c.env.DB);
-  const admin = isAdmin(c);
+  const admin = canManage(c, "events"); // may add and edit events
 
   // Which view to open on. "" lets calendar.js choose (the last view this
   // browser used, or Month on a computer and Schedule on a phone).
@@ -243,8 +243,8 @@ routes.get("/api/calendar/events", async (c) => {
   return c.json({ events: events });
 });
 
-routes.use("/api/calendar/events/*", requireAdmin);
-routes.post("/api/calendar/events", requireAdmin);
+routes.use("/api/calendar/events/*", requirePermission("events"));
+routes.post("/api/calendar/events", requirePermission("events"));
 
 // A time as the date-and-time picker gives it: "2026-11-01T10:00".
 const LOCAL_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;

@@ -1,6 +1,7 @@
 // Small helper functions used by many pages.
 
 import type { Context } from "hono";
+import type { Permission } from "./permissions";
 import type { AppEnv } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -314,7 +315,7 @@ export function describeFileLabels(musicKey: string, version: string): string {
 /**
  * Sheet music, chord charts and MuseScore files are always public, because
  * set lists link to them so anyone can see what the choir will sing.
- * Recordings and other files follow EVERYTHING_PUBLIC.
+ * Recordings and other files follow "Who can see" in Site settings.
  */
 export function isAlwaysPublicKind(kind: string): boolean {
   return kind === "sheet" || kind === "chords" || kind === "musescore";
@@ -376,17 +377,36 @@ export function isAdmin(c: Context<AppEnv>): boolean {
 }
 
 /**
+ * True if the logged-in person may manage this part of the site:
+ * admins always can, members only if an admin has allowed it
+ * (Admin > Member accounts, see src/permissions.ts).
+ */
+export function canManage(c: Context<AppEnv>, permission: Permission): boolean {
+  return isAdmin(c) || (isLoggedIn(c) && c.get("permissions").has(permission));
+}
+
+/** True if the logged-in person may open the admin area at all. */
+export function canUseAdminArea(c: Context<AppEnv>): boolean {
+  return isAdmin(c) || (isLoggedIn(c) && c.get("permissions").size > 0);
+}
+
+/**
  * True if this visitor may see the members' pages: music, PowerPoints,
  * rosters, set lists and members-only events.
  *
- * Controlled by EVERYTHING_PUBLIC in wrangler.jsonc:
- *   "yes" -> everyone can see them, no login needed
- *   "no"  -> only logged-in members can see them
+ * Controlled by "Who can see" in Admin > Site settings (until that is
+ * saved, by EVERYTHING_PUBLIC in wrangler.jsonc):
+ *   everyone      -> no login needed
+ *   members only  -> only logged-in members can see them
  *
- * (Admin pages always need an admin login, whatever this is set to.)
+ * (Admin pages always need a login, whatever this is set to.)
  */
+export function everythingIsPublic(c: Context<AppEnv>): boolean {
+  return c.get("settings").everythingPublic;
+}
+
 export function canSeeMemberPages(c: Context<AppEnv>): boolean {
-  if (c.env.EVERYTHING_PUBLIC === "yes") {
+  if (everythingIsPublic(c)) {
     return true;
   }
   return isLoggedIn(c);

@@ -17,7 +17,7 @@
 import { Hono } from "hono";
 import { deleteReadings, getReadingsForDate, getReadingsFrom, saveReadings } from "../database";
 import { formatDate, getFormText, getTodaysDate, isValidDate } from "../helpers";
-import { requireAdmin } from "../middleware";
+import { requirePermission } from "../middleware";
 import { Notice } from "../pages/layout";
 import { renderPage } from "../pages/render";
 import { READING_PARTS } from "../reading-parts";
@@ -25,8 +25,8 @@ import type { AppEnv } from "../types";
 
 const routes = new Hono<AppEnv>();
 
-routes.use("/admin/readings", requireAdmin);
-routes.use("/admin/readings/*", requireAdmin);
+routes.use("/admin/readings", requirePermission("readings"));
+routes.use("/admin/readings/*", requirePermission("readings"));
 
 routes.get("/admin/readings", async (c) => {
   const today = getTodaysDate(c.env.TIMEZONE);

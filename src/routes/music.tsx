@@ -7,7 +7,7 @@
 // special services...) are kept the same way, but listed on their own
 // page: /prayers. They are songs with section = "prayers".
 //
-// Who can see this is set by EVERYTHING_PUBLIC in wrangler.jsonc
+// Who can see this is set in Admin > Site settings
 // ("yes" = everyone, "no" = logged-in members only).
 // ===========================================================================
 
@@ -615,7 +615,7 @@ function SongFileItem(props: { file: SongFileRow; siteAddress: string }) {
 //
 // Sheet music, chord charts and MuseScore files are always public, because
 // set lists link to them so anyone can see what the choir will sing.
-// Recordings and other files follow EVERYTHING_PUBLIC like the rest of the
+// Recordings and other files follow "Who can see" in Site settings like the rest of the
 // music library.
 // ---------------------------------------------------------------------------
 routes.get("/files/:id", async (c) => {
@@ -635,7 +635,7 @@ routes.get("/files/:id", async (c) => {
   // replaced. So the browser can keep its copy for a year, and scrolling
   // the music library again doesn't use up the free plan's daily requests.
   if (c.req.query("v") === fileVersion(file.r2_key) && response.ok) {
-    const sharing = c.env.EVERYTHING_PUBLIC === "yes" || isAlwaysPublicKind(file.kind) ? "public" : "private";
+    const sharing = c.get("settings").everythingPublic || isAlwaysPublicKind(file.kind) ? "public" : "private";
     response.headers.set("Cache-Control", sharing + ", max-age=31536000, immutable");
   }
   return response;

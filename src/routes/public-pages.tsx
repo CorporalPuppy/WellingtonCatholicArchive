@@ -5,7 +5,7 @@
 // Each event's set list ("what we'll sing") is always public, with links to
 // the sheet music and YouTube recordings, so anyone can see what the choir
 // is singing. Rosters and members-only events are shown to members (or to
-// everyone, while EVERYTHING_PUBLIC is "yes"), and so are the event's
+// everyone, while Site settings says everything is public), and so are the event's
 // slides, like the rest of the PowerPoint archive.
 // ===========================================================================
 
@@ -25,19 +25,17 @@ routes.get("/", async (c) => {
   const today = getTodaysDate(c.env.TIMEZONE);
   const events = await getUpcomingEvents(c.env.DB, today, canSeeMemberPages(c), null);
   const nextFewEvents = events.slice(0, 3);
+  const settings = c.get("settings"); // the words below are set in Admin > Site settings
 
   return renderPage(
     c,
     "Welcome",
     <>
+      {settings.announcement !== "" && <p class="announcement">{settings.announcement}</p>}
       <section class="hero">
-        {/* TODO: change this small label and the welcome text to the choir's own words. */}
-        <p class="eyebrow">Catholic choir</p>
-        <h1>{c.env.CHOIR_NAME}</h1>
-        <p class="hero-text">
-          A short welcome goes here: who the choir is, which parishes we sing
-          at, and how to join.
-        </p>
+        {settings.eyebrow !== "" && <p class="eyebrow">{settings.eyebrow}</p>}
+        <h1>{settings.choirName}</h1>
+        {settings.welcomeText !== "" && <p class="hero-text">{settings.welcomeText}</p>}
         <p class="hero-buttons">
           <a class="button" href="/events">See where we're singing</a>
           <a class="button button-secondary" href="/readings">Today's readings</a>
@@ -91,7 +89,7 @@ routes.get("/events/:id", async (c) => {
   const eventId = Number(c.req.param("id"));
   const event = await getEvent(c.env.DB, eventId);
 
-  // Members-only events need a login (unless EVERYTHING_PUBLIC is "yes").
+  // Members-only events need a login (unless Site settings says everything is public).
   const allowed = event !== null && (event.is_public === 1 || canSeeMemberPages(c));
   if (event === null || !allowed) {
     return renderPage(c, "Not found", <p>Sorry, we couldn't find that event.</p>, 404);

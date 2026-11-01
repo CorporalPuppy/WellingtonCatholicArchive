@@ -46,15 +46,15 @@ import {
   workOutContentType,
   wouldGoOverFreeStorage,
 } from "../helpers";
-import { requireAdmin } from "../middleware";
+import { requirePermission } from "../middleware";
 import { Notice } from "../pages/layout";
 import { renderPage } from "../pages/render";
 import type { AppEnv, SongRow } from "../types";
 
 const routes = new Hono<AppEnv>();
 
-routes.use("/admin/songs", requireAdmin);
-routes.use("/admin/songs/*", requireAdmin);
+routes.use("/admin/songs", requirePermission("songs"));
+routes.use("/admin/songs/*", requirePermission("songs"));
 
 function readSongForm(form: Record<string, unknown>): SongDetails {
   return {

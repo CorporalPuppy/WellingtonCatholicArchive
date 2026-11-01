@@ -9,12 +9,12 @@ type LayoutProps = {
   choirName: string;
   user: SessionUser | null;
   showMemberLinks: boolean;
+  showAdminLink: boolean; // admins, and members who may manage part of the site
   children?: Child;
 };
 
 export function Layout(props: LayoutProps) {
   const user = props.user;
-  const isAdmin = user !== null && user.role === "admin";
 
   return (
     <html lang="en">
@@ -52,7 +52,7 @@ export function Layout(props: LayoutProps) {
               {props.showMemberLinks && <a href="/music">Music</a>}
               {props.showMemberLinks && <a href="/prayers">Prayers</a>}
               {props.showMemberLinks && <a href="/powerpoints">PowerPoints</a>}
-              {isAdmin && <a href="/admin">Admin</a>}
+              {props.showAdminLink && <a href="/admin">Admin</a>}
               {user !== null && <a href="/account">My account</a>}
               {user === null && <a href="/login">Log in</a>}
               {user !== null && (

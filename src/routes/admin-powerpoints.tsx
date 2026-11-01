@@ -25,15 +25,15 @@ import {
   safeRedirectPath,
   wouldGoOverFreeStorage,
 } from "../helpers";
-import { requireAdmin } from "../middleware";
+import { requirePermission } from "../middleware";
 import { Notice } from "../pages/layout";
 import { renderPage } from "../pages/render";
 import type { AppEnv } from "../types";
 
 const routes = new Hono<AppEnv>();
 
-routes.use("/admin/powerpoints", requireAdmin);
-routes.use("/admin/powerpoints/*", requireAdmin);
+routes.use("/admin/powerpoints", requirePermission("powerpoints"));
+routes.use("/admin/powerpoints/*", requirePermission("powerpoints"));
 
 routes.get("/admin/powerpoints", async (c) => {
   const powerpoints = await getPowerpoints(c.env.DB, "");

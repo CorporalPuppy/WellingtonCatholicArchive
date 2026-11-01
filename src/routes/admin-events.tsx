@@ -39,16 +39,16 @@ import {
   updateEvent,
   type EventDetails,
 } from "../database";
-import { formatEventTime, formatFileSize, getFormText, getTodaysDate } from "../helpers";
-import { requireAdmin } from "../middleware";
+import { canManage, formatEventTime, formatFileSize, getFormText, getTodaysDate } from "../helpers";
+import { requirePermission } from "../middleware";
 import { Notice } from "../pages/layout";
 import { renderPage } from "../pages/render";
 import type { AppEnv, EventRow, ParishRow } from "../types";
 
 const routes = new Hono<AppEnv>();
 
-routes.use("/admin/events", requireAdmin);
-routes.use("/admin/events/*", requireAdmin);
+routes.use("/admin/events", requirePermission("events"));
+routes.use("/admin/events/*", requirePermission("events"));
 
 /**
  * Reads the event form's boxes into an EventDetails object. The form has
@@ -378,6 +378,8 @@ routes.get("/admin/events/:id", async (c) => {
         )}
       </SideCard>
 
+      {/* Only for people who may manage PowerPoints (the upload goes to /admin/powerpoints). */}
+      {canManage(c, "powerpoints") && (
       <SideCard icon={ICONS.slides} title="Slides">
         <p class="muted gedit-small">
           The PowerPoint for this Mass, to put on the screen. Ones in the <a href="/admin/powerpoints">archive</a> for the
@@ -414,6 +416,7 @@ routes.get("/admin/events/:id", async (c) => {
           <button type="submit" class="button-small">Upload slides</button>
         </form>
       </SideCard>
+      )}
 
       <SideCard icon={ICONS.people} title={"Roster" + (roster.length > 0 ? " (" + roster.length + ")" : "")}>
         {roster.length === 0 && <p class="muted">Nobody rostered yet.</p>}

@@ -3,7 +3,9 @@
 // ===========================================================================
 
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { getFormText } from "../helpers";
+import { PERMISSIONS } from "../permissions";
 import { requireLogin } from "../middleware";
 import { Notice } from "../pages/layout";
 import { renderPage } from "../pages/render";
@@ -15,13 +17,14 @@ const routes = new Hono<AppEnv>();
 routes.use("/account", requireLogin);
 routes.use("/account/*", requireLogin);
 
-function AccountPage(props: { name: string; email: string; message?: { kind: "error" | "success"; text: string } }) {
+function AccountPage(props: { name: string; email: string; manages: string; message?: { kind: "error" | "success"; text: string } }) {
   return (
     <section class="narrow">
       <h1>My account</h1>
       <p>
         {props.name} ({props.email})
       </p>
+      <p class="muted">{props.manages}</p>
       {props.message && <Notice kind={props.message.kind} message={props.message.text} />}
       <h2>Change password</h2>
       <form method="post" action="/account/password">
@@ -39,9 +42,17 @@ function AccountPage(props: { name: string; email: string; message?: { kind: "er
   );
 }
 
+/** "You're an admin..." or what this member may manage, for the account page. */
+function describeAccess(c: Context<AppEnv>): string {
+  if (c.get("user")!.role === "admin") return "You're an admin, so you can manage everything.";
+  const labels = PERMISSIONS.filter((permission) => c.get("permissions").has(permission.key)).map((permission) => permission.label);
+  if (labels.length === 0) return "You're a member. Ask an admin if you'd like to help manage part of the site.";
+  return "You're a member and can also manage: " + labels.join(", ") + ".";
+}
+
 routes.get("/account", (c) => {
   const user = c.get("user")!;
-  return renderPage(c, "My account", <AccountPage name={user.name} email={user.email} />);
+  return renderPage(c, "My account", <AccountPage name={user.name} email={user.email} manages={describeAccess(c)} />);
 });
 
 routes.post("/account/password", async (c) => {
@@ -66,11 +77,11 @@ routes.post("/account/password", async (c) => {
 
   if (!authResponse.ok) {
     const message = { kind: "error" as const, text: "Couldn't change the password. Check your current password and try again." };
-    return renderPage(c, "My account", <AccountPage name={user.name} email={user.email} message={message} />, 400);
+    return renderPage(c, "My account", <AccountPage name={user.name} email={user.email} manages={describeAccess(c)} message={message} />, 400);
   }
 
   const message = { kind: "success" as const, text: "Password changed. Any other devices have been logged out." };
-  const page = await renderPage(c, "My account", <AccountPage name={user.name} email={user.email} message={message} />);
+  const page = await renderPage(c, "My account", <AccountPage name={user.name} email={user.email} manages={describeAccess(c)} message={message} />);
   for (const cookie of authResponse.headers.getSetCookie()) {
     page.headers.append("Set-Cookie", cookie);
   }

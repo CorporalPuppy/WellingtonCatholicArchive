@@ -5,7 +5,7 @@ import type { Context } from "hono";
 import type { Child } from "hono/jsx";
 import { raw } from "hono/html";
 import { Layout } from "./layout";
-import { canSeeMemberPages } from "../helpers";
+import { canSeeMemberPages, canUseAdminArea } from "../helpers";
 import type { AppEnv } from "../types";
 
 export function renderPage(c: Context<AppEnv>, title: string, content: Child, status: 200 | 400 | 403 | 404 = 200) {
@@ -15,9 +15,10 @@ export function renderPage(c: Context<AppEnv>, title: string, content: Child, st
       {raw("<!doctype html>")}
       <Layout
         title={title}
-        choirName={c.env.CHOIR_NAME}
+        choirName={c.get("settings").choirName}
         user={c.get("user")}
         showMemberLinks={canSeeMemberPages(c)}
+        showAdminLink={canUseAdminArea(c)}
       >
         {content}
       </Layout>

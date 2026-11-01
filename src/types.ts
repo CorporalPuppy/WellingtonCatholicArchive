@@ -1,4 +1,6 @@
 import type { Auth, SessionUser } from "./auth";
+import type { Permission } from "./permissions";
+import type { SiteSettings } from "./settings";
 
 export type Env = {
   DB: D1Database;
@@ -19,6 +21,9 @@ export type AppEnv = {
   Variables: {
     auth: Auth;
     user: SessionUser | null;
+    // What the logged-in member may manage (empty for visitors; admins can do everything anyway).
+    permissions: Set<Permission>;
+    settings: SiteSettings;
   };
 };
 

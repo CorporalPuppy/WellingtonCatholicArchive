@@ -42,7 +42,7 @@ export async function sendFileFromStorage(
   headers.set("Content-Disposition", disposition + "; filename*=UTF-8''" + encodeURIComponent(filename));
 
   // Members-only files must not be stored by shared caches.
-  if (c.env.EVERYTHING_PUBLIC === "yes") {
+  if (c.get("settings").everythingPublic) {
     headers.set("Cache-Control", "public, max-age=3600");
   } else {
     headers.set("Cache-Control", "private, max-age=3600");

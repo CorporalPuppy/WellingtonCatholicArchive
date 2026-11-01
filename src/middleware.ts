@@ -2,7 +2,10 @@
 
 import { createMiddleware } from "hono/factory";
 import { createAuth } from "./auth";
-import { canSeeMemberPages, isAdmin, isLoggedIn } from "./helpers";
+import { getMemberPermissions } from "./database";
+import { canManage, canSeeMemberPages, canUseAdminArea, isAdmin, isLoggedIn } from "./helpers";
+import type { Permission } from "./permissions";
+import { getSiteSettings } from "./settings";
 import type { AppEnv } from "./types";
 
 /**
@@ -22,6 +25,16 @@ export const loadUser = createMiddleware<AppEnv>(async (c, next) => {
   } else {
     c.set("user", null);
   }
+
+  // What a logged-in member (not an admin) has been allowed to manage.
+  const user = c.get("user");
+  if (user !== null && user.role !== "admin") {
+    c.set("permissions", await getMemberPermissions(c.env.DB, user.id));
+  } else {
+    c.set("permissions", new Set());
+  }
+
+  c.set("settings", await getSiteSettings(c.env));
 
   await next();
 });
@@ -47,9 +60,35 @@ export const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
   await next();
 });
 
+/** Only lets through admins, and members who may manage this part of the site. */
+export function requirePermission(permission: Permission) {
+  return createMiddleware<AppEnv>(async (c, next) => {
+    if (!isLoggedIn(c)) {
+      const backTo = encodeURIComponent(c.req.path);
+      return c.redirect("/login?next=" + backTo);
+    }
+    if (!canManage(c, permission)) {
+      return c.text("Sorry, you don't have permission to change this. Please ask an admin.", 403);
+    }
+    await next();
+  });
+}
+
+/** Only lets through admins, and members who may manage at least one part of the site. */
+export const requireAdminArea = createMiddleware<AppEnv>(async (c, next) => {
+  if (!isLoggedIn(c)) {
+    const backTo = encodeURIComponent(c.req.path);
+    return c.redirect("/login?next=" + backTo);
+  }
+  if (!canUseAdminArea(c)) {
+    return c.text("Sorry, only admins can see this page.", 403);
+  }
+  await next();
+});
+
 /**
  * Only lets people through who may see the members' pages
- * (everyone, if EVERYTHING_PUBLIC is "yes").
+ * (everyone, if Site settings says everything is public).
  */
 export const requireMemberAccess = createMiddleware<AppEnv>(async (c, next) => {
   if (!canSeeMemberPages(c)) {

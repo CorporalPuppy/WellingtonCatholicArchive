@@ -26,6 +26,7 @@ import adminSongs from "./routes/admin-songs";
 import adminUsers from "./routes/admin-users";
 import adminPowerpoints from "./routes/admin-powerpoints";
 import adminReadings from "./routes/admin-readings";
+import adminSettings from "./routes/admin-settings";
 import importApi from "./routes/import-api";
 
 const app = new Hono<AppEnv>();
@@ -56,6 +57,7 @@ app.route("/", adminSongs); //    /admin/songs/...
 app.route("/", adminUsers); //    /admin/users/...
 app.route("/", adminPowerpoints); // /admin/powerpoints/...
 app.route("/", adminReadings); // /admin/readings/...
+app.route("/", adminSettings); // /admin/settings
 app.route("/", importApi); //     /api/import/... (the bulk import script)
 
 export default app;

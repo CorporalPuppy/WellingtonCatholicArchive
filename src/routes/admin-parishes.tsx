@@ -10,15 +10,15 @@
 import { Hono } from "hono";
 import { createParish, deleteParish, getParishes, updateParish } from "../database";
 import { getFormText } from "../helpers";
-import { requireAdmin } from "../middleware";
+import { requirePermission } from "../middleware";
 import { Notice } from "../pages/layout";
 import { renderPage } from "../pages/render";
 import type { AppEnv, ParishRow } from "../types";
 
 const routes = new Hono<AppEnv>();
 
-routes.use("/admin/parishes", requireAdmin);
-routes.use("/admin/parishes/*", requireAdmin);
+routes.use("/admin/parishes", requirePermission("events"));
+routes.use("/admin/parishes/*", requirePermission("events"));
 
 /** The boxes for a parish, used for adding and for editing. */
 function ParishFields(props: { parish?: ParishRow }) {

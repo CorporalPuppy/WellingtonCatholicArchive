@@ -5,6 +5,7 @@
 // The tables are created by the files in the /migrations folder.
 
 import { cycleAndOccasionsOn } from "./liturgy";
+import { isPermission, type Permission } from "./permissions";
 import type { EventRow, ParishRow, PowerpointRow, ReadingsRow, RosterRow, SetlistRow, SongFileRow, SongRow } from "./types";
 
 // ===========================================================================
@@ -803,6 +804,9 @@ export type UserListRow = {
   name: string;
   email: string;
   role: string | null;
+  banned: number | null; //      1 = the account is turned off
+  createdAt: string | number; // when the account was made
+  lastActive: string | number | null; // the last time one of their logins was used (roughly: Better Auth updates it about once a day)
 };
 
 export async function countUsers(db: D1Database): Promise<number> {
@@ -812,9 +816,62 @@ export async function countUsers(db: D1Database): Promise<number> {
 
 export async function getAllUsers(db: D1Database): Promise<UserListRow[]> {
   const result = await db
-    .prepare('SELECT id, name, email, role FROM "user" ORDER BY name COLLATE NOCASE')
+    .prepare(
+      'SELECT u.id, u.name, u.email, u.role, u.banned, u.createdAt, ' +
+        '(SELECT MAX(s.updatedAt) FROM "session" s WHERE s.userId = u.id) AS lastActive ' +
+        'FROM "user" u ORDER BY u.name COLLATE NOCASE',
+    )
     .all<UserListRow>();
   return result.results;
+}
+
+// ---------------------------------------------------------------------------
+// Member permissions (see src/permissions.ts)
+// ---------------------------------------------------------------------------
+
+/** What one member may manage. */
+export async function getMemberPermissions(db: D1Database, userId: string): Promise<Set<Permission>> {
+  const permissions = new Set<Permission>();
+  try {
+    const result = await db
+      .prepare("SELECT permission FROM member_permissions WHERE user_id = ?")
+      .bind(userId)
+      .all<{ permission: string }>();
+    for (const row of result.results) {
+      if (isPermission(row.permission)) permissions.add(row.permission);
+    }
+  } catch (error) {
+    // The table doesn't exist until `npm run db:migrate:remote` has run.
+    console.error("Couldn't read member permissions:", error);
+  }
+  return permissions;
+}
+
+/** What every member may manage, keyed by user id (for the accounts page). */
+export async function getAllMemberPermissions(db: D1Database): Promise<Map<string, Set<Permission>>> {
+  const byUser = new Map<string, Set<Permission>>();
+  try {
+    const result = await db
+      .prepare("SELECT user_id, permission FROM member_permissions")
+      .all<{ user_id: string; permission: string }>();
+    for (const row of result.results) {
+      if (!isPermission(row.permission)) continue;
+      if (!byUser.has(row.user_id)) byUser.set(row.user_id, new Set());
+      byUser.get(row.user_id)!.add(row.permission);
+    }
+  } catch (error) {
+    console.error("Couldn't read member permissions:", error);
+  }
+  return byUser;
+}
+
+/** Replaces what one member may manage. */
+export async function setMemberPermissions(db: D1Database, userId: string, permissions: Permission[]): Promise<void> {
+  const statements = [db.prepare("DELETE FROM member_permissions WHERE user_id = ?").bind(userId)];
+  for (const permission of permissions) {
+    statements.push(db.prepare("INSERT INTO member_permissions (user_id, permission) VALUES (?, ?)").bind(userId, permission));
+  }
+  await db.batch(statements);
 }
 
 // ---------------------------------------------------------------------------

@@ -168,8 +168,8 @@ All in **`wrangler.jsonc`**, under `"vars"`:
 
 | Setting | What it does |
 | --- | --- |
-| `CHOIR_NAME` | Shown in the header, footer and page titles. |
-| `EVERYTHING_PUBLIC` | `"yes"` (now): everyone can see the music library, recordings, PowerPoints, rosters and members-only events. `"no"`: only logged-in members can. Set lists, sheet music and chord charts are always public. Admin pages always need an admin login. |
+| `CHOIR_NAME` | Shown in the header, footer and page titles. Only a starting value: once an admin saves **Admin > Site settings**, the name there is used. |
+| `EVERYTHING_PUBLIC` | `"yes"` (now): everyone can see the music library, recordings, PowerPoints, rosters and members-only events. `"no"`: only logged-in members can. Set lists, sheet music and chord charts are always public. Admin pages always need a login. Only a starting value: once an admin saves **Admin > Site settings**, its "Who can see" choice is used instead. |
 | `TIMEZONE` | Used to decide which events are "upcoming". `Pacific/Auckland` for New Zealand. |
 
 Other things to personalise:
