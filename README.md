@@ -503,8 +503,13 @@ is `CHURCHES` at the top of the script). On the PowerPoints page:
   best match first, with the matching words highlighted. "teresas" finds
   "St Teresa's" and "maori" finds "Māori". Old `.ppt` files are found by
   title only, since their words can't be read without extra software.
-- **filters** narrow it to Year A, B or C, a season (or Other services)
-  and a church.
+- **filters** narrow it to Year A, B or C, a season (or Other services),
+  a church, and things updated in the past week, month or year.
+- **sort** lists them by Sunday (the usual), recently updated, newest
+  service first, or A to Z. The music library has the same Updated filter
+  and sorts A to Z, Z to A, recently updated or recently added. "Updated"
+  is when a file was last uploaded or replaced, by the sync app, the bulk
+  import or the admin pages.
 
 The search uses SQLite's built-in full-text search (FTS5). One catch:
 `wrangler d1 export` can't export a database with a search index in it.

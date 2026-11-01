@@ -53,6 +53,7 @@ export type SongRow = {
   sheet_music_url: string;
   section: "music" | "prayers"; // "prayers" = Prayers and services
   tags: string; // e.g. "Marian, Easter" ("" = none)
+  created_at: string; // when the song was added, "2026-10-25 21:30:00" (UTC)
 };
 
 export type SongFileRow = {

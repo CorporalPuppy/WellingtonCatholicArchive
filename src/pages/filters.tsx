@@ -45,3 +45,25 @@ export function FilterPills(props: { label: string; pills: { label: string; href
     </nav>
   );
 }
+
+/**
+ * The "Updated" filter on the music library and PowerPoints: only things
+ * uploaded or changed (e.g. by the sync app) in the past week, month or year.
+ */
+export const UPDATED_FILTERS = [
+  { value: "week", label: "Past week", days: 7 },
+  { value: "month", label: "Past month", days: 31 },
+  { value: "year", label: "Past year", days: 366 },
+];
+
+/**
+ * The earliest upload time the "Updated" filter lets through, written the
+ * way the database writes times ("2026-10-25 09:30:00", in UTC) so the two
+ * can be compared as text. "" = no filter.
+ */
+export function updatedSince(choice: string): string {
+  const filter = UPDATED_FILTERS.find((item) => item.value === choice);
+  if (filter === undefined) return "";
+  const cutoff = new Date(Date.now() - filter.days * 24 * 60 * 60 * 1000);
+  return cutoff.toISOString().replace("T", " ").slice(0, 19);
+}

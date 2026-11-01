@@ -67,6 +67,17 @@ export function wouldGoOverFreeStorage(alreadyUsed: number, adding: number): boo
 }
 
 /**
+ * Turns a time the database wrote ("2026-10-25 21:30:00", in UTC) into a
+ * short local date like "26 Oct 2026", for "Updated 26 Oct 2026".
+ */
+export function formatUploadDate(databaseTime: string, timeZone: string): string {
+  const date = new Date(databaseTime.replace(" ", "T") + "Z");
+  if (Number.isNaN(date.getTime())) return "";
+  const formatter = new Intl.DateTimeFormat("en-NZ", { timeZone: timeZone, day: "numeric", month: "short", year: "numeric" });
+  return formatter.format(date);
+}
+
+/**
  * Turns "2026-10-26" into "Monday, 26 October 2026".
  */
 export function formatDate(date: string): string {

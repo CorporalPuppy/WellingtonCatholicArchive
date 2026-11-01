@@ -762,7 +762,13 @@ main:has(> .music-page) { max-width: 1040px; }
 .music-search input[type="search"] { flex: 1 1 220px; min-width: 0; }
 .music-search select.tag-filter { min-width: 0; }
 /* Room for two dropdowns (PowerPoints: season and church). */
-.music-search-wide { max-width: 760px; }
+/* With several dropdowns (tag/season/church, updated, sort): the search box
+   on its own line, the dropdowns and button sharing the line below. */
+.music-search-wide, .music-search-wider { max-width: 760px; flex-wrap: wrap; }
+.music-search-wider { max-width: 880px; }
+form.music-search-wide input[type="search"], form.music-search-wider input[type="search"] { flex: 1 1 100%; }
+form.music-search-wide select.tag-filter, form.music-search-wider select.tag-filter { flex: 1 1 150px; }
+.score-card-date { display: block; font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
 
 /* "All · Sheet music · Chord charts ...": like a shop's categories. */
 .music-filters {
@@ -1034,6 +1040,9 @@ canvas.score-cover-preview.shown { opacity: 0.22; }
   form.music-search { flex-wrap: wrap; }
   form.music-search:has(select) input[type="search"] { flex: 1 1 100%; }
   form.music-search select.tag-filter { flex: 1 1 0; min-width: 0; }
+  /* Two dropdowns to a line, then the Search button across the bottom. */
+  form.music-search-wide select.tag-filter, form.music-search-wider select.tag-filter { flex: 1 1 calc(50% - 4px); }
+  form.music-search-wide button, form.music-search-wider button { flex: 1 1 100%; }
   .letter-jump { top: 0; position: static; }
   .score-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 14px; }
   .score-cover { padding: 14px 10px; }

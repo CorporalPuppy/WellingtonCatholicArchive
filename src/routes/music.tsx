@@ -14,11 +14,11 @@
 import { Hono } from "hono";
 import { getAllSongFileSummaries, getSong, getSongFile, getSongFiles, getSongs } from "../database";
 import type { SongFileSummary } from "../database";
-import { canSeeMemberPages, describeFileLabels, formatFileSize, isAlwaysPublicKind, printableAs, splitTags } from "../helpers";
+import { canSeeMemberPages, describeFileLabels, formatFileSize, formatUploadDate, isAlwaysPublicKind, printableAs, splitTags } from "../helpers";
 import { raw } from "hono/html";
 import { sendFileFromStorage } from "../files";
 import { requireMemberAccess } from "../middleware";
-import { FilterPills, FilterSelect, pageLink } from "../pages/filters";
+import { FilterPills, FilterSelect, pageLink, UPDATED_FILTERS, updatedSince } from "../pages/filters";
 import { renderPage } from "../pages/render";
 import type { Context } from "hono";
 import type { AppEnv, SongFileRow, SongRow } from "../types";
@@ -35,6 +35,8 @@ routes.use("/prayers/*", requireMemberAccess);
 // ---------------------------------------------------------------------------
 // List of songs, with a search box: GET /music?search=amazing
 //   and a tag filter:                GET /music?tag=Marian
+//   only recently changed songs:     GET /music?updated=week (or month, year)
+//   sorted another way:              GET /music?sort=updated (or za, added)
 // List of prayers and services:      GET /prayers?search=creed
 // ---------------------------------------------------------------------------
 routes.get("/music", async (c) => {
@@ -52,23 +54,37 @@ async function showSongList(c: Context<AppEnv>, section: "music" | "prayers") {
   const filter = RESOURCE_FILTERS.find((item) => item.kind === has) ?? null;
   // ?tag=Marian shows only songs with that tag.
   const tag = c.req.query("tag") ?? "";
+  // ?updated=week shows only songs with a file uploaded or changed lately.
+  const updated = UPDATED_FILTERS.some((item) => item.value === c.req.query("updated")) ? c.req.query("updated")! : "";
+  const since = updatedSince(updated);
+  // ?sort=updated puts the latest changes first ("" = A to Z, in letter groups).
+  const sort = SONG_SORTS.find((item) => item.value === c.req.query("sort"))?.value ?? "";
   const allSongs = await getSongs(c.env.DB, search, section);
   // Every tag used in this section, for the tag menu.
   const allTags = [...new Set(allSongs.flatMap((song) => splitTags(song.tags)))].sort((a, b) => a.localeCompare(b));
   const filesBySong = groupFilesBySong(await getAllSongFileSummaries(c.env.DB));
   const filesOf = (song: SongRow) => filesBySong.get(song.id) ?? [];
-  const songs = allSongs.filter(
-    (song) =>
-      (filter === null || filesOf(song).some((file) => file.kind === filter.kind)) &&
-      (tag === "" || splitTags(song.tags).includes(tag)),
+  const updatedAt = (song: SongRow) => lastUpdated(song, filesOf(song));
+  const songs = sortSongs(
+    allSongs.filter(
+      (song) =>
+        (filter === null || filesOf(song).some((file) => file.kind === filter.kind)) &&
+        (tag === "" || splitTags(song.tags).includes(tag)) &&
+        (since === "" || updatedAt(song) >= since),
+    ),
+    sort,
+    updatedAt,
   );
   const isPrayers = section === "prayers";
   const address = isPrayers ? "/prayers" : "/music";
-  const groups = groupByFirstLetter(songs);
+  // A to Z is shown in letter groups; any other order is one long list.
+  const groups = sort === "" ? groupByFirstLetter(songs) : [{ letter: "", songs: songs }];
+  // Sorted by date: each card says when it last changed (or was added).
+  const showDate = sort === "updated" || sort === "added" || updated !== "";
 
   /** The address of this page with a different filter, keeping the search. */
   function filterLink(kind: string): string {
-    return pageLink(address, { search: search, has: kind, tag: tag });
+    return pageLink(address, { search: search, has: kind, tag: tag, updated: updated, sort: sort });
   }
 
   return renderPage(
@@ -88,10 +104,12 @@ async function showSongList(c: Context<AppEnv>, section: "music" | "prayers") {
             </>
           )}
         </p>
-        <form method="get" action={address} class="search music-search">
+        <form method="get" action={address} class="search music-search music-search-wide">
           <input type="search" name="search" value={search} placeholder={isPrayers ? "Search by name or tag" : "Search by title, author or tag"} />
           {filter !== null && <input type="hidden" name="has" value={filter.kind} />}
           {allTags.length > 0 && <FilterSelect name="tag" label="Tag" anyLabel="Any tag" options={allTags} selected={tag} />}
+          <FilterSelect name="updated" label="Updated" anyLabel="Updated any time" options={UPDATED_FILTERS} selected={updated} />
+          <FilterSelect name="sort" label="Sort by" anyLabel="A to Z" options={SONG_SORTS.filter((item) => item.value !== "")} selected={sort} />
           <button type="submit">Search</button>
         </form>
       </header>
@@ -114,6 +132,13 @@ async function showSongList(c: Context<AppEnv>, section: "music" | "prayers") {
         {search !== "" && <> matching "{search}"</>}
         {filter !== null && <> with {filter.label.toLowerCase()}</>}
         {tag !== "" && <> tagged {tag}</>}
+        {updated !== "" && <> updated in the {UPDATED_FILTERS.find((item) => item.value === updated)!.label.toLowerCase()}</>}
+        {(search !== "" || filter !== null || tag !== "" || updated !== "" || sort !== "") && (
+          <>
+            {" · "}
+            <a href={address}>Clear</a>
+          </>
+        )}
       </p>
 
       {/* A to Z: jump straight to a letter. */}
@@ -128,12 +153,23 @@ async function showSongList(c: Context<AppEnv>, section: "music" | "prayers") {
       {songs.length === 0 && <p class="music-empty">{isPrayers ? "Nothing found." : "No songs found."}</p>}
 
       {groups.map((group) => (
-        <section class="letter-group" id={"letter-" + group.letter}>
-          <h2 class="letter-heading">{group.letter}</h2>
+        <section class="letter-group" id={group.letter === "" ? undefined : "letter-" + group.letter}>
+          {group.letter !== "" && <h2 class="letter-heading">{group.letter}</h2>}
           <ul class="score-grid">
             {group.songs.map((song) => (
               <li>
-                <SongCard song={song} href={address + "/" + song.id} files={filesOf(song)} />
+                <SongCard
+                  song={song}
+                  href={address + "/" + song.id}
+                  files={filesOf(song)}
+                  date={
+                    !showDate
+                      ? ""
+                      : sort === "added"
+                        ? "Added " + formatUploadDate(song.created_at, c.env.TIMEZONE)
+                        : "Updated " + formatUploadDate(updatedAt(song), c.env.TIMEZONE)
+                  }
+                />
               </li>
             ))}
           </ul>
@@ -152,6 +188,36 @@ const RESOURCE_FILTERS = [
   { kind: "recording", label: "Recordings", short: "Audio" },
   { kind: "slides", label: "Slides", short: "Slides" },
 ];
+
+/** The ways the music library can be sorted ("" = the usual A to Z). */
+const SONG_SORTS = [
+  { value: "", label: "A to Z" },
+  { value: "za", label: "Z to A" },
+  { value: "updated", label: "Recently updated" },
+  { value: "added", label: "Recently added" },
+];
+
+/**
+ * When a song last changed: its newest file upload (a new file, or one
+ * replaced by the sync app or the admin pages), or when the song was added
+ * if that's later (or it has no files). In the database's UTC format.
+ */
+function lastUpdated(song: SongRow, files: SongFileSummary[]): string {
+  let latest = song.created_at ?? "";
+  for (const file of files) {
+    if (file.uploaded_at > latest) latest = file.uploaded_at;
+  }
+  return latest;
+}
+
+/** Songs in the chosen order. They come from the database A to Z already. */
+function sortSongs(songs: SongRow[], sort: string, updatedAt: (song: SongRow) => string): SongRow[] {
+  const byTitle = (a: SongRow, b: SongRow) => a.title.localeCompare(b.title);
+  if (sort === "za") return [...songs].reverse();
+  if (sort === "updated") return [...songs].sort((a, b) => updatedAt(b).localeCompare(updatedAt(a)) || byTitle(a, b));
+  if (sort === "added") return [...songs].sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? "") || b.id - a.id);
+  return songs;
+}
 
 /** Songs in groups by the first letter of their title ("#" for numbers and the rest). */
 function groupByFirstLetter(songs: SongRow[]): { letter: string; songs: SongRow[] }[] {
@@ -176,7 +242,7 @@ function groupByFirstLetter(songs: SongRow[]): { letter: string; songs: SongRow[
  * a "cover" with staff lines and the title, then the title, author and
  * what's available underneath. The whole card is the link.
  */
-function SongCard(props: { song: SongRow; href: string; files: SongFileSummary[] }) {
+function SongCard(props: { song: SongRow; href: string; files: SongFileSummary[]; date: string }) {
   const song = props.song;
   const available = RESOURCE_FILTERS.filter((item) => props.files.some((file) => file.kind === item.kind));
   return (
@@ -186,6 +252,7 @@ function SongCard(props: { song: SongRow; href: string; files: SongFileSummary[]
         <strong>{song.title}</strong>
         {song.author !== "" && <span class="score-card-author">{song.author}</span>}
         {song.tags !== "" && <span class="song-tags">{splitTags(song.tags).join(" · ")}</span>}
+        {props.date !== "" && <span class="score-card-date">{props.date}</span>}
         {available.length > 0 && (
           <span class="score-card-kinds">
             {available.map((item) => (

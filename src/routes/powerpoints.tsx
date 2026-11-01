@@ -12,17 +12,20 @@
 //                                 ?search= finds words in the title, church,
 //                                 notes or on the slides, best match first.
 //                                 ?year=A|B|C|current, ?church= and ?season=
-//                                 filter.
+//                                 filter. ?updated=week|month|year shows only
+//                                 those uploaded or changed lately.
+//                                 ?sort=updated|date|az lists them all in one
+//                                 list, newest change, newest service or A to Z.
 //   GET /powerpoints/:id/file     open or download one file
 // ===========================================================================
 
 import { Hono } from "hono";
 import { getPowerpoint, getPowerpointChurches, getPowerpoints } from "../database";
 import { sendFileFromStorage } from "../files";
-import { formatDate, formatFileSize, getTodaysDate, liturgicalYear } from "../helpers";
+import { formatDate, formatFileSize, formatUploadDate, getTodaysDate, liturgicalYear } from "../helpers";
 import { OCCASION_GROUPS, occasionGroup, occasionOrder, occasionsOn } from "../liturgy";
 import { requireMemberAccess } from "../middleware";
-import { FilterPills, FilterSelect, pageLink } from "../pages/filters";
+import { FilterPills, FilterSelect, pageLink, UPDATED_FILTERS, updatedSince } from "../pages/filters";
 import { renderPage } from "../pages/render";
 import type { AppEnv, PowerpointRow } from "../types";
 
@@ -40,21 +43,32 @@ routes.get("/powerpoints", async (c) => {
   const year = yearChoice === "current" ? currentCycle : yearChoice;
   const church = c.req.query("church") ?? "";
   const season = c.req.query("season") ?? "";
-  const filtering = year !== "" || church !== "" || season !== "";
+  const updated = UPDATED_FILTERS.some((item) => item.value === c.req.query("updated")) ? c.req.query("updated")! : "";
+  const since = updatedSince(updated);
+  // "" = filed by Sunday (or best match first when searching).
+  const sort = POWERPOINT_SORTS.find((item) => item.value === c.req.query("sort"))?.value ?? "";
+  const filtering = year !== "" || church !== "" || season !== "" || updated !== "";
+  // Searching or sorting: one list instead of the Year dropdowns.
+  const oneList = search !== "" || sort !== "";
+  const showUpdated = sort === "updated" || updated !== "";
 
   const churches = await getPowerpointChurches(c.env.DB);
-  const powerpoints = (await getPowerpoints(c.env.DB, search))
-    .map((powerpoint) => ({ powerpoint: powerpoint, filed: filingOf(powerpoint) }))
-    .filter(
-      ({ powerpoint, filed }) =>
-        (year === "" || filed.cycle === year) &&
-        (church === "" || powerpoint.church === church) &&
-        (season === "" || filed.group === season),
-    );
+  const powerpoints = sortPowerpoints(
+    (await getPowerpoints(c.env.DB, search))
+      .map((powerpoint) => ({ powerpoint: powerpoint, filed: filingOf(powerpoint) }))
+      .filter(
+        ({ powerpoint, filed }) =>
+          (year === "" || filed.cycle === year) &&
+          (church === "" || powerpoint.church === church) &&
+          (season === "" || filed.group === season) &&
+          (since === "" || powerpoint.uploaded_at >= since),
+      ),
+    sort,
+  );
 
   /** The address of this page with a different Year, keeping the search and other filters. */
   function yearLink(cycle: string): string {
-    return pageLink("/powerpoints", { search: search, year: cycle, season: season, church: church });
+    return pageLink("/powerpoints", { search: search, year: cycle, season: season, church: church, updated: updated, sort: sort });
   }
 
   return renderPage(
@@ -68,13 +82,21 @@ routes.get("/powerpoints", async (c) => {
           The slides for each Sunday and service, filed by Year and season. Prayers, rosaries and other slides used
           again and again are under <a href="/prayers">Prayers and services</a>.
         </p>
-        <form method="get" action="/powerpoints" class="search music-search music-search-wide">
+        <form method="get" action="/powerpoints" class="search music-search music-search-wider">
           <input type="search" name="search" value={search} placeholder="Search titles and the words on the slides" />
           {yearChoice !== "" && <input type="hidden" name="year" value={yearChoice} />}
           <FilterSelect name="season" label="Season" anyLabel="Any season" options={[...OCCASION_GROUPS, OTHER]} selected={season} />
           {churches.length > 0 && (
             <FilterSelect name="church" label="Church" anyLabel="Any church" options={churches} selected={church} />
           )}
+          <FilterSelect name="updated" label="Updated" anyLabel="Updated any time" options={UPDATED_FILTERS} selected={updated} />
+          <FilterSelect
+            name="sort"
+            label="Sort by"
+            anyLabel={search !== "" ? "Best match" : "By Sunday"}
+            options={POWERPOINT_SORTS.filter((item) => item.value !== "")}
+            selected={sort}
+          />
           <button type="submit">Search</button>
         </form>
       </header>
@@ -99,7 +121,8 @@ routes.get("/powerpoints", async (c) => {
         {year !== "" && <> for Year {year}{yearChoice === "current" && " (the current year)"}</>}
         {season !== "" && <> in {season}</>}
         {church !== "" && <> at {church}</>}
-        {(search !== "" || filtering) && (
+        {updated !== "" && <> updated in the {UPDATED_FILTERS.find((item) => item.value === updated)!.label.toLowerCase()}</>}
+        {(search !== "" || filtering || sort !== "") && (
           <>
             {" · "}
             <a href="/powerpoints">Clear</a>
@@ -109,11 +132,16 @@ routes.get("/powerpoints", async (c) => {
 
       {powerpoints.length === 0 && <p class="music-empty">No PowerPoints found.</p>}
 
-      {/* Searching: one list, best match first. */}
-      {search !== "" && powerpoints.length > 0 && (
+      {/* Searching or sorting: one list, best match (or the chosen order) first. */}
+      {oneList && powerpoints.length > 0 && (
         <ul class="file-list">
           {powerpoints.map(({ powerpoint, filed }) => (
-            <PowerpointItem powerpoint={powerpoint} filed={filed} showOccasion={true} />
+            <PowerpointItem
+              powerpoint={powerpoint}
+              filed={filed}
+              showOccasion={true}
+              updated={showUpdated ? formatUploadDate(powerpoint.uploaded_at, c.env.TIMEZONE) : ""}
+            />
           ))}
         </ul>
       )}
@@ -122,7 +150,7 @@ routes.get("/powerpoints", async (c) => {
           then other services). Inside, a heading per season and one per
           Sunday or feast, in the Church's order. The current Year starts
           open (all of them when filtering). */}
-      {search === "" &&
+      {!oneList &&
         groupForPage(powerpoints).map((shelf) => (
           <details class="file-section" open={filtering || shelf.cycle === currentCycle}>
             <summary>
@@ -137,7 +165,12 @@ routes.get("/powerpoints", async (c) => {
                     {occasionGroup.occasion !== "" && <h3 class="occasion-heading">{occasionGroup.occasion}</h3>}
                     <ul class="file-list">
                       {occasionGroup.items.map(({ powerpoint, filed }) => (
-                        <PowerpointItem powerpoint={powerpoint} filed={filed} showOccasion={false} />
+                        <PowerpointItem
+                          powerpoint={powerpoint}
+                          filed={filed}
+                          showOccasion={false}
+                          updated={showUpdated ? formatUploadDate(powerpoint.uploaded_at, c.env.TIMEZONE) : ""}
+                        />
                       ))}
                     </ul>
                   </div>
@@ -151,6 +184,27 @@ routes.get("/powerpoints", async (c) => {
 });
 
 const OTHER = "Other services";
+
+/** The other ways the PowerPoints can be listed ("" = filed by Sunday, or best match when searching). */
+const POWERPOINT_SORTS = [
+  { value: "", label: "By Sunday" },
+  { value: "updated", label: "Recently updated" },
+  { value: "date", label: "Newest service first" },
+  { value: "az", label: "A to Z" },
+];
+
+/** PowerPoints in the chosen order. "" keeps the database's order (best match first when searching). */
+function sortPowerpoints(items: Item[], sort: string): Item[] {
+  const byTitle = (a: Item, b: Item) => a.powerpoint.title.localeCompare(b.powerpoint.title);
+  if (sort === "updated") {
+    return [...items].sort((a, b) => b.powerpoint.uploaded_at.localeCompare(a.powerpoint.uploaded_at) || b.powerpoint.id - a.powerpoint.id);
+  }
+  if (sort === "date") {
+    return [...items].sort((a, b) => b.powerpoint.service_date.localeCompare(a.powerpoint.service_date) || byTitle(a, b));
+  }
+  if (sort === "az") return [...items].sort(byTitle);
+  return items;
+}
 
 type Filed = { cycle: string; occasion: string; group: string };
 
@@ -174,7 +228,7 @@ function filingOf(powerpoint: PowerpointRow): Filed {
 }
 
 /** One PowerPoint in a list: title, where it's filed, church, date, event, file and download button. */
-function PowerpointItem(props: { powerpoint: PowerpointRow; filed: Filed; showOccasion: boolean }) {
+function PowerpointItem(props: { powerpoint: PowerpointRow; filed: Filed; showOccasion: boolean; updated: string }) {
   const { powerpoint, filed } = props;
   const details: string[] = [];
   if (props.showOccasion && filed.occasion !== "") details.push(filed.occasion);
@@ -197,6 +251,7 @@ function PowerpointItem(props: { powerpoint: PowerpointRow; filed: Filed; showOc
             )}
             {(details.length > 0 || powerpoint.event_id !== null) && <br />}
             {powerpoint.filename} ({formatFileSize(powerpoint.size)})
+            {props.updated !== "" && <> - Updated {props.updated}</>}
           </span>
           {powerpoint.snippet !== undefined && powerpoint.snippet.includes("\u0001") && (
             <p class="search-snippet">
