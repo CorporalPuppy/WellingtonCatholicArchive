@@ -844,7 +844,7 @@ def print_total_size(rows):
 # Step 2: upload
 # ---------------------------------------------------------------------------
 
-def upload(plan_path, site, token, songs_path, suggestions_path):
+def upload(plan_path, site, token, songs_path, suggestions_path, keep_removed=False):
     """
     Makes the site match your music folders:
       - new files are uploaded
@@ -933,7 +933,11 @@ def upload(plan_path, site, token, songs_path, suggestions_path):
             print("   ", on_site[path]["title"], "-", os.path.basename(path))
         if len(to_delete) > 30:
             print("    ...and", len(to_delete) - 30, "more")
-        answer = input("Remove them from the site? Type yes to remove, anything else to keep: ")
+        if keep_removed:
+            answer = ""
+            print("  Kept them (--keep-removed). Run upload without it to remove them.")
+        else:
+            answer = input("Remove them from the site? Type yes to remove, anything else to keep: ")
         if answer.strip().lower() == "yes":
             for path in to_delete:
                 try:
@@ -942,7 +946,7 @@ def upload(plan_path, site, token, songs_path, suggestions_path):
                 except RuntimeError as error:
                     print("  FAILED", path, "-", error)
                     failed += 1
-        else:
+        elif not keep_removed:
             print("  Kept them. They'll be listed again next time.")
 
     failed += send_tags(site, token, songs_path, suggestions_path)
@@ -1097,6 +1101,8 @@ def main():
     upload_step.add_argument("--plan", default=PLAN_FILE)
     upload_step.add_argument("--songs", default=SONG_LIST_FILE, help="your song list (for its tags column)")
     upload_step.add_argument("--suggestions", default=SUGGESTIONS_FILE, help="tag suggestions, for the approved ones")
+    upload_step.add_argument("--keep-removed", action="store_true",
+                             help="don't ask about files gone from your folders: keep them on the site (used by sync_app.py)")
 
     args = parser.parse_args()
 
@@ -1135,7 +1141,7 @@ def main():
                 suggest_tags(args.songs, args.suggestions, args.cache)
     else:
         token = os.environ.get("IMPORT_TOKEN") or getpass.getpass("Import token: ")
-        upload(args.plan, args.site, token, args.songs, args.suggestions)
+        upload(args.plan, args.site, token, args.songs, args.suggestions, args.keep_removed)
 
 
 if __name__ == "__main__":

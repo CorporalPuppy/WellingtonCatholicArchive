@@ -440,7 +440,7 @@ def write_plan(rows, plan_path):
 # Upload
 # ---------------------------------------------------------------------------
 
-def upload(plan_path, site, token):
+def upload(plan_path, site, token, keep_removed=False):
     """Makes the site's PowerPoint archive match your folders (see the top of this file)."""
     rows = read_csv(plan_path)
     if rows and "occasion" not in rows[0]:
@@ -535,11 +535,15 @@ def upload(plan_path, site, token):
             print("   ", on_site[path]["title"])
         if len(to_delete) > 30:
             print("    ...and", len(to_delete) - 30, "more")
-        answer = input("Remove them from the site? Type yes to remove, anything else to keep: ")
+        if keep_removed:
+            answer = ""
+            print("  Kept them (--keep-removed). Run upload without it to remove them.")
+        else:
+            answer = input("Remove them from the site? Type yes to remove, anything else to keep: ")
         if answer.strip().lower() == "yes":
             for path in to_delete:
                 failed += send(site, token, "/api/import/slides/delete", None, {"source": path})
-        else:
+        elif not keep_removed:
             print("  Kept them. They'll be listed again next time.")
 
     print("Done, but " + str(failed) + " failed. Run the upload again to retry them." if failed else "Done.")
@@ -578,6 +582,8 @@ def main():
     upload_step = steps.add_parser("upload", help="upload every row marked ok")
     upload_step.add_argument("--site", required=True, help="e.g. https://ourchoir.nz")
     upload_step.add_argument("--plan", default=PLAN_FILE)
+    upload_step.add_argument("--keep-removed", action="store_true",
+                             help="don't ask about PowerPoints gone from your folders: keep them on the site (used by sync_app.py)")
 
     args = parser.parse_args()
 
@@ -599,7 +605,7 @@ def main():
         print('Look over', args.plan, 'in Excel if you like (fix any "check" rows), save, then run "upload".')
     else:
         token = os.environ.get("IMPORT_TOKEN") or getpass.getpass("Import token: ")
-        upload(args.plan, args.site, token)
+        upload(args.plan, args.site, token, args.keep_removed)
 
 
 if __name__ == "__main__":

@@ -104,7 +104,9 @@ choir-site/
 │   └── 0011_powerpoint_occasions.sql  PowerPoints filed by occasion and Year
 │
 ├── tools/
-│   └── import_music.py     bulk import of your music folders (see "Importing your music library")
+│   ├── import_music.py     bulk import of your music folders (see "Importing your music library")
+│   ├── import_slides.py    bulk import of Sunday PowerPoints
+│   └── sync_app.py         the sync app: runs both imports for you (see "Keeping the site in sync")
 │
 ├── public/                 plain files sent as-is
 │   ├── styles.css          colours and layout (change colours at the top)
@@ -512,6 +514,50 @@ To back up, drop the index first and put it back afterwards (see
 PowerPoints you use again and again, like the Holy Rosary or the Stations
 of the Cross, belong on the Prayers and services page instead: put them in
 the music library's prayers folder and import them with `import_music.py`.
+
+### Keeping the site in sync (the sync app)
+
+`tools/sync_app.py` is a small window that runs the music and PowerPoint
+imports for you. Open it by double-clicking **`tools/Choir site sync.pyw`**
+(or `python tools/sync_app.py`). It needs Python from python.org, which
+includes everything it uses.
+
+The first time, fill in your Music folder (the same one you scan, e.g.
+`C:\Users\Elijah\Documents\Music`), the site address and the import
+code. They're saved in `sync_settings.json` in the main project folder,
+next to your spreadsheets. That file holds the import code, so it's kept
+out of git. The app uses the spreadsheets in that main folder, so keep
+running the scripts from there as before.
+
+- **Sync now** scans and uploads the music, then the PowerPoints.
+- **Update automatically when files change**: with this ticked, the app
+  looks at your Music folder every minute. When something has been added,
+  edited, renamed or deleted (or you've saved a fix in one of the
+  spreadsheets), it waits a minute for things to settle, then syncs.
+- **Start with Windows** opens the app minimised when you sign in, so
+  automatic updates keep going in the background.
+- **Fix 'check' rows** opens `import_plan.csv` and `slides_plan.csv`.
+
+A sync never asks questions, so it plays safe:
+
+- only rows marked `ok` are uploaded. A new file the scripts aren't sure
+  about (e.g. a new song that isn't in `song_list.csv` yet) is marked
+  `check` and waits. The window says how many; fix them in Excel and save,
+  and the next sync sends them.
+- nothing is removed from the site. Files gone from your folders are
+  counted and listed in the log, and stay on the site until you click
+  **Remove deleted files** and say yes.
+- if the site can't be reached, it tries again 15 minutes later.
+
+The first music import is still done by hand (steps 1 to 5 above), because
+`song_list.csv` needs tidying before anything is uploaded. Until it exists
+the app syncs only the PowerPoints.
+
+Looking at the folder happens on your computer and costs nothing. Only a
+real change leads to a sync, which makes three small requests plus one per
+changed file, so even syncing many times a day stays far inside the free
+plan's 100,000 requests a day. Storage is the one limit to watch, as
+before: R2's free 10 GB.
 
 ---
 
