@@ -553,6 +553,12 @@ running the scripts from there as before.
   slides or pages. **Open file** opens it, and **Show in folder** opens
   its folder in File Explorer with the file picked out. The next
   sync uploads its files. Close `song_list.csv` in Excel first.
+  The **Your songs** tab lists every song on `song_list.csv`, with a
+  search box. Click one to change its title, other spellings, tags or
+  note, then **Save changes**. A new title keeps the old one as another
+  spelling, so files named the old way still match, and the next sync
+  moves the files to the new name. **Delete song** takes a song off the
+  list (its files then wait as `check`).
 - **Fix 'check' rows** opens `import_plan.csv` and `slides_plan.csv`.
 - The app uses the site's colours and fonts. The button at the top right
   switches between light, dark and the same as Windows (the colours are

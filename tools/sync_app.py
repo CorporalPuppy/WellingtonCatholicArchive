@@ -278,6 +278,60 @@ def add_song(title, other_spellings="", tags=""):
     return None
 
 
+def update_song(original_title, title, other_spellings="", tags="", note=None):
+    """
+    Changes a song on song_list.csv. A new title keeps the old one as another
+    spelling, so files named the old way still belong to it. Returns a
+    problem to show, or None if it worked.
+    """
+    title = re.sub(r"\s+", " ", title or "").strip()
+    if not title:
+        return "The song needs a title."
+    rows, columns = read_song_rows()
+    song = next((row for row in rows if (row.get("title") or "").strip() == original_title), None)
+    if song is None:
+        return 'There\'s no song called "{}" on the list any more.'.format(original_title)
+    spellings = split_spellings(other_spellings)
+    if match_key(title) != match_key(original_title) and match_key(original_title) not in map(match_key, spellings):
+        spellings.append(original_title)
+    # Drop repeats, and spellings that are just the title again.
+    kept, seen = [], {match_key(title)}
+    for spelling in spellings:
+        if match_key(spelling) not in seen:
+            seen.add(match_key(spelling))
+            kept.append(spelling)
+    others = song_lookup([row for row in rows if row is not song])
+    for spelling in [title] + kept:
+        if match_key(spelling) in others:
+            return '"{}" is already used by "{}".'.format(spelling, others[match_key(spelling)])
+    song.update(title=title, other_spellings="; ".join(kept), tags=tidy_tags(tags))
+    if note is not None:
+        song["note"] = note.strip()
+    write_song_rows(rows, columns)
+    return None
+
+
+def delete_song(title):
+    """Takes a song off song_list.csv. Returns a problem, or None."""
+    rows, columns = read_song_rows()
+    kept = [row for row in rows if (row.get("title") or "").strip() != title]
+    if len(kept) == len(rows):
+        return 'There\'s no song called "{}" on the list.'.format(title)
+    write_song_rows(kept, columns)
+    return None
+
+
+def files_per_song():
+    """How many files in import_plan.csv each song has, by title (lower case)."""
+    counts = {}
+    if os.path.exists(MUSIC_PLAN):
+        for row in read_csv(MUSIC_PLAN):
+            if (row.get("status") or "").strip().lower() != "skip":
+                key = (row.get("song_title") or "").strip().lower()
+                counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
 def add_spelling(title, spelling):
     """Adds another spelling to a song already on song_list.csv. Returns a problem, or None."""
     spelling = re.sub(r"\s+", " ", spelling or "").strip()
@@ -624,6 +678,13 @@ class Theme:
                          arrowcolor=c["muted"], background=c["surface"])
             st.map(kind, bordercolor=[("focus", c["accent"])], lightcolor=[("focus", c["accent"])],
                    fieldbackground=[("readonly", c["background"])])
+        st.configure("TNotebook", background=c["background"], borderwidth=0, tabmargins=(0, 0, 0, 0))
+        st.configure("TNotebook.Tab", background=c["background"], foreground=c["muted"], padding=(18, 8),
+                     font=(FONT, 10, "bold"), borderwidth=1, bordercolor=c["border"],
+                     lightcolor=c["background"], darkcolor=c["background"])
+        st.map("TNotebook.Tab", background=[("selected", c["surface"]), ("active", c["accent_soft"])],
+               foreground=[("selected", c["accent"]), ("active", c["accent"])],
+               lightcolor=[("selected", c["surface"])])
         st.configure("Vertical.TScrollbar", background=c["surface"], troughcolor=c["surface"],
                      bordercolor=c["surface"], lightcolor=c["surface"], darkcolor=c["surface"], arrowcolor=c["muted"])
         st.map("Vertical.TScrollbar", background=[("active", c["accent_soft"])])
@@ -992,13 +1053,21 @@ class SongsWindow:
         self.window.geometry("1000x820")
         theme = app.theme
         theme.add(self.window, "window")
-        header(self.window, theme, "Songs", "Add songs to song_list.csv without opening Excel")
+        header(self.window, theme, "Songs", "Add and edit the songs on song_list.csv without opening Excel")
         body = ttk.Frame(self.window, padding=(18, 6, 18, 18))
         body.pack(fill="both", expand=True)
 
         self.message = ttk.Label(body, text="", style="Good.TLabel",
                                  justify="left", wraplength=900)
         self.message.pack(side="bottom", anchor="w", pady=(10, 0))
+        tabs = ttk.Notebook(body)
+        tabs.pack(fill="both", expand=True)
+        waiting = ttk.Frame(tabs, padding=(0, 12, 0, 0))
+        yours = ttk.Frame(tabs, padding=(0, 12, 0, 0))
+        tabs.add(waiting, text="Add songs")
+        tabs.add(yours, text="Your songs")
+        self.build_your_songs(yours)
+        body = waiting  # the rest of this goes on the first tab
         new = card(body, "Add a new song")
         new.pack(fill="x", pady=(0, 12))
         form = ttk.Frame(new, style="Card.TFrame", borderwidth=0)
@@ -1060,14 +1129,125 @@ class SongsWindow:
             ttk.Label(frame, text=hint, style="Muted.Card.TLabel").grid(row=row + 1, column=1, sticky="w")
         return entry
 
+    # -- the Your songs tab ------------------------------------------------
+
+    def build_your_songs(self, tab):
+        theme = self.app.theme
+        self.editing = None  # the title of the song in the form
+
+        picker = card(tab, "Your songs", "Every song on song_list.csv. Type to search titles, spellings and tags, "
+                                         "then click a song to change it.")
+        picker.pack(side="left", fill="both", expand=True, padx=(0, 12))
+        self.search = ttk.Entry(picker)
+        self.search.pack(fill="x", pady=(6, 8))
+        self.search.bind("<KeyRelease>", lambda _: self.fill_song_list())
+        frame, self.song_list = scrolled(picker, theme, "list", width=34, exportselection=False,
+                                         activestyle="none", font=(FONT, 10))
+        frame.pack(fill="both", expand=True)
+        self.song_list.bind("<<ListboxSelect>>", lambda _: self.pick_song())
+        self.song_count = ttk.Label(picker, text="", style="Muted.Card.TLabel")
+        self.song_count.pack(anchor="w", pady=(6, 0))
+
+        edit = card(tab, "Edit song")
+        edit.pack(side="left", fill="both", expand=True)
+        form = ttk.Frame(edit, style="Card.TFrame", borderwidth=0)
+        form.pack(fill="x", pady=(6, 0))
+        form.columnconfigure(1, weight=1)
+        self.edit_title = self.field(form, 0, "Title",
+                                     "change it to rename the song: the old title is kept as another spelling")
+        self.edit_spellings = self.field(form, 2, "Other spellings", "with ; between them")
+        self.edit_tags = self.field(form, 4, "Tags", "with commas between them, e.g. Marian, Easter")
+        self.edit_note = self.field(form, 6, "Note", "just for you; the site doesn't use it")
+        self.edit_info = ttk.Label(form, text="Pick a song on the left.", style="Muted.Card.TLabel",
+                                   wraplength=380, justify="left")
+        self.edit_info.grid(row=8, column=1, sticky="w", pady=(8, 0))
+        buttons = ttk.Frame(edit, style="Card.TFrame", borderwidth=0)
+        buttons.pack(fill="x", pady=(12, 0))
+        ttk.Button(buttons, text="Save changes", command=self.save_song, cursor="hand2").pack(side="left")
+        ttk.Button(buttons, text="Undo", style="Secondary.TButton", command=self.pick_song,
+                   cursor="hand2").pack(side="left", padx=(8, 0))
+        ttk.Button(buttons, text="Delete song...", style="Danger.TButton", command=self.remove_song,
+                   cursor="hand2").pack(side="right")
+
+    def fill_song_list(self):
+        typed = match_key(self.search.get())
+        self.shown_songs = [song for song in self.songs
+                            if not typed or typed in match_key((song.get("title") or "") + " " +
+                                                               (song.get("other_spellings") or "") + " " +
+                                                               (song.get("tags") or ""))]
+        self.song_list.delete(0, "end")
+        for song in self.shown_songs:
+            tags = (song.get("tags") or "").strip()
+            self.song_list.insert("end", song["title"].strip() + ("   \u00b7 " + tags if tags else ""))
+        self.song_count.config(text="{} of {} songs".format(len(self.shown_songs), len(self.songs))
+                               if typed else "{} songs".format(len(self.songs)))
+        # Keep the song being edited picked, if it's still in the list.
+        for index, song in enumerate(self.shown_songs):
+            if song["title"].strip() == self.editing:
+                self.song_list.selection_set(index)
+                self.song_list.see(index)
+
+    def pick_song(self):
+        chosen = self.song_list.curselection()
+        if chosen:
+            self.editing = self.shown_songs[chosen[0]]["title"].strip()
+        song = next((row for row in self.songs if row["title"].strip() == self.editing), None)
+        if song is None:
+            return
+        for entry, column in ((self.edit_title, "title"), (self.edit_spellings, "other_spellings"),
+                              (self.edit_tags, "tags"), (self.edit_note, "note")):
+            entry.delete(0, "end")
+            entry.insert(0, (song.get(column) or "").strip())
+        files = self.file_counts.get(self.editing.lower(), 0)
+        found = (song.get("found_in") or "").strip()
+        self.edit_info.config(text="{} file{} in your folder at the last sync{}.".format(
+            files, "" if files == 1 else "s", " (" + found + ")" if found else ""))
+
+    def save_song(self):
+        if self.editing is None:
+            messagebox.showinfo("Songs", "Pick a song on the left first.", parent=self.window)
+            return
+        old, new = self.editing, self.edit_title.get().strip()
+        problem = self.save(lambda: update_song(old, new, self.edit_spellings.get(), self.edit_tags.get(),
+                                                self.edit_note.get()))
+        if not problem:
+            self.editing = re.sub(r"\s+", " ", new)
+        renamed = ' Its files move to the new name on the next sync; the old song shows under "Resolve now" ' \
+                  'on the admin songs page if it\'s left with none.' if not problem and new != old else ""
+        self.done(problem, 'Saved "{}".{}'.format(new, renamed))
+
+    def remove_song(self):
+        if self.editing is None:
+            messagebox.showinfo("Songs", "Pick a song on the left first.", parent=self.window)
+            return
+        files = self.file_counts.get(self.editing.lower(), 0)
+        warning = ("\n\nIts {} file{} will be marked 'check' at the next sync and won't be updated on the site "
+                   "until you add the song again or link them to another.".format(files, "" if files == 1 else "s")
+                   if files else "")
+        if not messagebox.askyesno("Songs", 'Take "{}" off song_list.csv?{}'.format(self.editing, warning),
+                                   parent=self.window):
+            return
+        title = self.editing
+        problem = self.save(lambda: delete_song(title))
+        if not problem:
+            self.editing = None
+            for entry in (self.edit_title, self.edit_spellings, self.edit_tags, self.edit_note):
+                entry.delete(0, "end")
+            self.edit_info.config(text="Pick a song on the left.")
+        self.done(problem, 'Took "{}" off song_list.csv.'.format(title))
+
     def refresh(self):
         try:
             rows = read_song_rows()[0]
+            self.songs = sorted((row for row in rows if (row.get("title") or "").strip()),
+                                key=lambda row: row["title"].strip().lower())
+            self.file_counts = files_per_song()
             self.all_titles = sorted({(song.get("title") or "").strip() for song in rows} - {""}, key=str.lower)
             self.unknown = unknown_titles()
         except SystemExit as error:  # read_csv stops with a message on a file it can't read
             messagebox.showerror("Songs", str(error), parent=self.window)
-            self.all_titles, self.unknown = [], []
+            self.all_titles, self.unknown, self.songs, self.file_counts = [], [], [], {}
+        self.fill_song_list()
         self.same_as["values"] = self.all_titles
         self.list.delete(0, "end")
         for title, files in self.unknown:
