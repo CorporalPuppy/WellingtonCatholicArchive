@@ -14,6 +14,8 @@
 //                                 ?year=A|B|C|current, ?church= and ?season=
 //                                 filter. ?updated=week|month|year shows only
 //                                 those uploaded or changed lately.
+//                                 ?calendar=2025 shows only those used in that
+//                                 calendar year (each one is tagged with it).
 //                                 ?sort=updated|date|az lists them all in one
 //                                 list, newest change, newest service or A to Z.
 //   GET /powerpoints/:id/file     open or download one file
@@ -43,24 +45,35 @@ routes.get("/powerpoints", async (c) => {
   const year = yearChoice === "current" ? currentCycle : yearChoice;
   const church = c.req.query("church") ?? "";
   const season = c.req.query("season") ?? "";
+  // ?calendar=2025: the calendar year it was used, not Year A, B or C.
+  const calendar = /^\d{4}$/.test(c.req.query("calendar") ?? "") ? c.req.query("calendar")! : "";
   const updated = UPDATED_FILTERS.some((item) => item.value === c.req.query("updated")) ? c.req.query("updated")! : "";
   const since = updatedSince(updated);
   // "" = filed by Sunday (or best match first when searching).
   const sort = POWERPOINT_SORTS.find((item) => item.value === c.req.query("sort"))?.value ?? "";
-  const filtering = year !== "" || church !== "" || season !== "" || updated !== "";
+  const filtering = year !== "" || church !== "" || season !== "" || updated !== "" || calendar !== "";
   // Searching or sorting: one list instead of the Year dropdowns.
   const oneList = search !== "" || sort !== "";
   const showUpdated = sort === "updated" || updated !== "";
 
   const churches = await getPowerpointChurches(c.env.DB);
+  const everything = (await getPowerpoints(c.env.DB, search)).map((powerpoint) => ({
+    powerpoint: powerpoint,
+    filed: filingOf(powerpoint),
+  }));
+  // Every calendar year there are slides for, newest first, for the dropdown.
+  const calendarYears = [...new Set(everything.map((item) => item.filed.calendarYear).filter((each) => each !== ""))]
+    .sort()
+    .reverse();
+  if (calendar !== "" && !calendarYears.includes(calendar)) calendarYears.unshift(calendar);
   const powerpoints = sortPowerpoints(
-    (await getPowerpoints(c.env.DB, search))
-      .map((powerpoint) => ({ powerpoint: powerpoint, filed: filingOf(powerpoint) }))
+    everything
       .filter(
         ({ powerpoint, filed }) =>
           (year === "" || filed.cycle === year) &&
           (church === "" || powerpoint.church === church) &&
           (season === "" || filed.group === season) &&
+          (calendar === "" || filed.calendarYear === calendar) &&
           (since === "" || powerpoint.uploaded_at >= since),
       ),
     sort,
@@ -68,7 +81,7 @@ routes.get("/powerpoints", async (c) => {
 
   /** The address of this page with a different Year, keeping the search and other filters. */
   function yearLink(cycle: string): string {
-    return pageLink("/powerpoints", { search: search, year: cycle, season: season, church: church, updated: updated, sort: sort });
+    return pageLink("/powerpoints", { search: search, year: cycle, season: season, church: church, calendar: calendar, updated: updated, sort: sort });
   }
 
   return renderPage(
@@ -88,6 +101,9 @@ routes.get("/powerpoints", async (c) => {
           <FilterSelect name="season" label="Season" anyLabel="Any season" options={[...OCCASION_GROUPS, OTHER]} selected={season} />
           {churches.length > 0 && (
             <FilterSelect name="church" label="Church" anyLabel="Any church" options={churches} selected={church} />
+          )}
+          {calendarYears.length > 0 && (
+            <FilterSelect name="calendar" label="Calendar year" anyLabel="Used any year" options={calendarYears} selected={calendar} />
           )}
           <FilterSelect name="updated" label="Updated" anyLabel="Updated any time" options={UPDATED_FILTERS} selected={updated} />
           <FilterSelect
@@ -121,6 +137,7 @@ routes.get("/powerpoints", async (c) => {
         {year !== "" && <> for Year {year}{yearChoice === "current" && " (the current year)"}</>}
         {season !== "" && <> in {season}</>}
         {church !== "" && <> at {church}</>}
+        {calendar !== "" && <> used in {calendar}</>}
         {updated !== "" && <> updated in the {UPDATED_FILTERS.find((item) => item.value === updated)!.label.toLowerCase()}</>}
         {(search !== "" || filtering || sort !== "") && (
           <>
@@ -206,7 +223,7 @@ function sortPowerpoints(items: Item[], sort: string): Item[] {
   return items;
 }
 
-type Filed = { cycle: string; occasion: string; group: string };
+type Filed = { cycle: string; occasion: string; group: string; calendarYear: string };
 
 /**
  * Where a PowerPoint is filed. The bulk import sets its Year and occasion.
@@ -224,7 +241,19 @@ function filingOf(powerpoint: PowerpointRow): Filed {
   if (cycle === "" && date !== "" && occasion !== "") {
     cycle = liturgicalYear(date).cycle;
   }
-  return { cycle: cycle, occasion: occasion, group: occasionGroup(occasion) ?? OTHER };
+  return { cycle: cycle, occasion: occasion, group: occasionGroup(occasion) ?? OTHER, calendarYear: calendarYearOf(powerpoint) };
+}
+
+/**
+ * The calendar year a PowerPoint was used, e.g. "2025", so the slides for
+ * the same Sunday three years apart (Year A comes round every three years)
+ * can be told apart. From its date; with no date, from a year in its title
+ * or file name ("2025 Christmas Carolling"). "" = not known.
+ */
+function calendarYearOf(powerpoint: PowerpointRow): string {
+  if (/^\d{4}/.test(powerpoint.service_date)) return powerpoint.service_date.slice(0, 4);
+  const found = (powerpoint.title + " " + powerpoint.filename).match(/(?<!\d)(20\d\d)(?!\d)/);
+  return found === null ? "" : found[1];
 }
 
 /** One PowerPoint in a list: title, where it's filed, church, date, event, file and download button. */
@@ -240,6 +269,7 @@ function PowerpointItem(props: { powerpoint: PowerpointRow; filed: Filed; showOc
       <div class="file-row">
         <div>
           <strong>{powerpoint.title}</strong>
+          {filed.calendarYear !== "" && <span class="year-tag">{filed.calendarYear}</span>}
           <br />
           <span class="muted">
             {details.join(" - ")}
@@ -301,6 +331,9 @@ function groupForPage(items: Item[]): Shelf[] {
   const sorted = [...items].sort(
     (a, b) =>
       occasionOrder(a.filed.occasion) - occasionOrder(b.filed.occasion) ||
+      // The same Sunday in different years: the newest first.
+      b.filed.calendarYear.localeCompare(a.filed.calendarYear) ||
+      b.powerpoint.service_date.localeCompare(a.powerpoint.service_date) ||
       a.powerpoint.title.localeCompare(b.powerpoint.title),
   );
   for (const item of sorted) {

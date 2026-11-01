@@ -504,7 +504,12 @@ is `CHURCHES` at the top of the script). On the PowerPoints page:
   "St Teresa's" and "maori" finds "Māori". Old `.ppt` files are found by
   title only, since their words can't be read without extra software.
 - **filters** narrow it to Year A, B or C, a season (or Other services),
-  a church, and things updated in the past week, month or year.
+  a church, the calendar year it was used (2025, 2026...), and things
+  updated in the past week, month or year.
+- each PowerPoint has a **year tag** (e.g. 2025) from its date, or from a
+  year in its title or file name, so the same Sunday from different years
+  (Year A comes round every three years) is easy to tell apart. The newest
+  comes first.
 - **sort** lists them by Sunday (the usual), recently updated, newest
   service first, or A to Z. The music library has the same Updated filter
   and sorts A to Z, Z to A, recently updated or recently added. "Updated"

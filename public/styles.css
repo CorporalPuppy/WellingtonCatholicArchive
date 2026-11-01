@@ -765,9 +765,21 @@ main:has(> .music-page) { max-width: 1040px; }
 /* With several dropdowns (tag/season/church, updated, sort): the search box
    on its own line, the dropdowns and button sharing the line below. */
 .music-search-wide, .music-search-wider { max-width: 760px; flex-wrap: wrap; }
-.music-search-wider { max-width: 880px; }
+.music-search-wider { max-width: 1010px; }
 form.music-search-wide input[type="search"], form.music-search-wider input[type="search"] { flex: 1 1 100%; }
 form.music-search-wide select.tag-filter, form.music-search-wider select.tag-filter { flex: 1 1 150px; }
+/* "2025" next to a PowerPoint's title: the calendar year it was used. */
+.year-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: 2px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
 .score-card-date { display: block; font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
 
 /* "All · Sheet music · Chord charts ...": like a shop's categories. */
