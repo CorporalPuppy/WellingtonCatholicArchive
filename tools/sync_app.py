@@ -47,7 +47,7 @@ import sys
 import threading
 import zipfile
 import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext, ttk
+from tkinter import filedialog, messagebox, ttk
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from import_music import SONG_LIST_COLUMNS, match_key, read_csv, tidy_tags  # noqa: E402
@@ -516,6 +516,220 @@ def set_start_with_windows(on):
 # The window
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# The look: the website's colours (public/styles.css), light and dark
+# ---------------------------------------------------------------------------
+
+# Keep in step with the "--" colours at the top of public/styles.css.
+LIGHT = {
+    "accent": "#2d4a7c", "accent_soft": "#e8edf6", "gold": "#c9a34e", "text": "#1d1d1f", "muted": "#6e6e73",
+    "background": "#fbfaf7", "surface": "#ffffff", "border": "#e7e5e0", "danger": "#c0392b",
+}
+DARK = {
+    "accent": "#9db8e8", "accent_soft": "#1f2a3d", "gold": "#e0be6e", "text": "#f2f2f2", "muted": "#a1a1a6",
+    "background": "#121316", "surface": "#1b1c20", "border": "#2c2d33", "danger": "#ff6b5e",
+}
+THEME_NAMES = {"system": "\u25d0  Same as Windows", "light": "\u25d0  Light", "dark": "\u25d0  Dark"}
+
+# The site uses the device's own font, which on Windows is Segoe UI.
+FONT = "Segoe UI" if os.name == "nt" else "Helvetica"
+MONO = "Consolas" if os.name == "nt" else "Courier"
+ICON = os.path.join(WORK_FOLDER, "public", "icon-192.png")
+
+
+def windows_uses_dark():
+    """True when Windows is set to dark mode for apps."""
+    if os.name != "nt":
+        return False
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as key:
+            return winreg.QueryValueEx(key, "AppsUseLightTheme")[0] == 0
+    except OSError:
+        return False
+
+
+def mix(colour, other, amount):
+    """A colour part of the way (0 to 1) towards another, for hover shades."""
+    a = [int(colour[i:i + 2], 16) for i in (1, 3, 5)]
+    b = [int(other[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join("{:02x}".format(round(x + (y - x) * amount)) for x, y in zip(a, b))
+
+
+class Theme:
+    """Paints every window in the site's colours, and repaints them when you switch light/dark."""
+
+    def __init__(self, root, choice):
+        self.root = root
+        self.choice = choice
+        self.plain = []  # (widget, kind): the few non-ttk widgets, painted by hand
+        self.style = ttk.Style(root)
+        self.style.theme_use("clam")  # the ttk look that takes colours best
+        self.apply()
+
+    @property
+    def dark(self):
+        return self.choice == "dark" or (self.choice == "system" and windows_uses_dark())
+
+    def apply(self):
+        c = self.colours = DARK if self.dark else LIGHT
+        st = self.style
+        base = (FONT, 10)
+        st.configure(".", background=c["background"], foreground=c["text"], font=base,
+                     bordercolor=c["border"], lightcolor=c["border"], darkcolor=c["border"],
+                     troughcolor=c["background"], focuscolor=c["accent"], insertcolor=c["text"],
+                     selectbackground=c["accent_soft"], selectforeground=c["text"])
+        st.configure("TFrame", background=c["background"])
+        st.configure("Card.TFrame", background=c["surface"], borderwidth=1, relief="solid")
+        st.configure("TLabel", background=c["background"], foreground=c["text"])
+        st.configure("Card.TLabel", background=c["surface"])
+        st.configure("Muted.Card.TLabel", background=c["surface"], foreground=c["muted"], font=(FONT, 9))
+        st.configure("Heading.Card.TLabel", background=c["surface"], font=(FONT, 12, "bold"))
+        st.configure("Good.Card.TLabel", background=c["surface"], foreground=c["accent"])
+        st.configure("Problem.Card.TLabel", background=c["surface"], foreground=c["danger"])
+        st.configure("Good.TLabel", foreground=c["accent"])
+        st.configure("Title.TLabel", font=(FONT, 15, "bold"))
+        st.configure("Subtitle.TLabel", foreground=c["muted"], font=(FONT, 9))
+
+        # Buttons: filled in the accent colour, like the site's; a quieter outlined one.
+        st.configure("TButton", background=c["accent"], foreground=c["background"], font=(FONT, 10, "bold"),
+                     borderwidth=0, padding=(18, 8), relief="flat", focusthickness=0)
+        st.map("TButton",
+               background=[("disabled", c["border"]), ("pressed", mix(c["accent"], c["text"], 0.15)),
+                           ("active", mix(c["accent"], c["background"], 0.12))],
+               foreground=[("disabled", c["muted"])])
+        st.configure("Secondary.TButton", background=c["surface"], foreground=c["accent"], borderwidth=1,
+                     relief="solid", bordercolor=c["border"], lightcolor=c["surface"], darkcolor=c["surface"])
+        st.map("Secondary.TButton",
+               background=[("disabled", c["surface"]), ("pressed", c["accent_soft"]), ("active", c["accent_soft"])],
+               foreground=[("disabled", c["muted"])], bordercolor=[("active", c["accent"])])
+        st.configure("Danger.TButton", background=c["surface"], foreground=c["danger"], borderwidth=1,
+                     relief="solid", bordercolor=c["border"], lightcolor=c["surface"], darkcolor=c["surface"])
+        st.map("Danger.TButton", background=[("disabled", c["surface"]), ("active", c["accent_soft"])],
+               foreground=[("disabled", c["muted"])])
+        st.configure("Header.TButton", background=c["background"], foreground=c["muted"], font=(FONT, 9),
+                     padding=(10, 4), borderwidth=1, relief="solid", bordercolor=c["border"],
+                     lightcolor=c["background"], darkcolor=c["background"])
+        st.map("Header.TButton", background=[("active", c["accent_soft"])], foreground=[("active", c["accent"])])
+
+        for kind in ("TCheckbutton",):
+            st.configure(kind, background=c["surface"], foreground=c["text"], indicatorbackground=c["surface"],
+                         indicatorforeground=c["accent"], indicatormargin=(0, 0, 8, 0), padding=(0, 4))
+            st.map(kind, background=[("active", c["surface"])],
+                   indicatorbackground=[("selected", c["accent_soft"]), ("active", c["accent_soft"])])
+        for kind in ("TEntry", "TCombobox"):
+            st.configure(kind, fieldbackground=c["background"], foreground=c["text"], padding=(8, 6),
+                         bordercolor=c["border"], lightcolor=c["background"], darkcolor=c["background"],
+                         arrowcolor=c["muted"], background=c["surface"])
+            st.map(kind, bordercolor=[("focus", c["accent"])], lightcolor=[("focus", c["accent"])],
+                   fieldbackground=[("readonly", c["background"])])
+        st.configure("Vertical.TScrollbar", background=c["surface"], troughcolor=c["surface"],
+                     bordercolor=c["surface"], lightcolor=c["surface"], darkcolor=c["surface"], arrowcolor=c["muted"])
+        st.map("Vertical.TScrollbar", background=[("active", c["accent_soft"])])
+        # The Combobox's drop-down list is a plain Tk list.
+        self.root.option_add("*TCombobox*Listbox.background", c["surface"])
+        self.root.option_add("*TCombobox*Listbox.foreground", c["text"])
+        self.root.option_add("*TCombobox*Listbox.selectBackground", c["accent_soft"])
+        self.root.option_add("*TCombobox*Listbox.selectForeground", c["text"])
+        self.root.option_add("*TCombobox*Listbox.font", base)
+
+        self.root.configure(background=c["background"])
+        for widget, kind in list(self.plain):
+            try:
+                self.paint(widget, kind)
+            except tk.TclError:
+                self.plain.remove((widget, kind))  # its window was closed
+
+    def paint(self, widget, kind):
+        c = self.colours
+        if kind == "window":
+            widget.configure(background=c["background"])
+            dark_title_bar(widget, self.dark)
+            return
+        widget.configure(background=c["surface"], foreground=c["text"], relief="flat", borderwidth=0,
+                         highlightthickness=1, highlightbackground=c["border"], highlightcolor=c["accent"],
+                         selectbackground=c["accent_soft"], selectforeground=c["text"])
+        if kind == "text":
+            widget.configure(insertbackground=c["text"], padx=10, pady=8)
+            widget.tag_configure("label", font=(FONT, 9, "bold"), foreground=c["muted"])
+            widget.tag_configure("words", foreground=c["text"])
+
+    def add(self, widget, kind):
+        """A non-ttk widget (window, list or text box) to keep in the site's colours."""
+        self.plain.append((widget, kind))
+        self.paint(widget, kind)
+        return widget
+
+    def switch(self):
+        """Same as Windows, then Light, then Dark, like the half-circle button on the site."""
+        order = ["system", "light", "dark"]
+        self.choice = order[(order.index(self.choice) + 1) % 3] if self.choice in order else "system"
+        self.apply()
+        return self.choice
+
+
+def dark_title_bar(window, dark):
+    """Windows 10 and 11 can draw a window's title bar dark; ask it to, to match."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        window.update_idletasks()
+        handle = ctypes.windll.user32.GetParent(window.winfo_id())
+        value = ctypes.c_int(1 if dark else 0)
+        for attribute in (20, 19):  # DWMWA_USE_IMMERSIVE_DARK_MODE, newer then older Windows
+            if ctypes.windll.dwmapi.DwmSetWindowAttribute(handle, attribute, ctypes.byref(value), ctypes.sizeof(value)) == 0:
+                break
+    except Exception:
+        pass  # only looks; never worth stopping for
+
+
+def scrolled(parent, theme, kind, **options):
+    """A list or text box with a slim scrollbar beside it, in a frame. Returns (frame, widget)."""
+    frame = ttk.Frame(parent, style="Card.TFrame", borderwidth=0)
+    widget = (tk.Listbox if kind == "list" else tk.Text)(frame, **options)
+    bar = ttk.Scrollbar(frame, orient="vertical", command=widget.yview)
+    widget.configure(yscrollcommand=bar.set)
+    bar.pack(side="right", fill="y")
+    widget.pack(side="left", fill="both", expand=True)
+    theme.add(widget, kind)
+    return frame, widget
+
+
+def card(parent, title=None, note=None):
+    """A white (or dark) panel with a thin border, like the site's cards. Returns its inside frame."""
+    outer = ttk.Frame(parent, style="Card.TFrame", padding=(16, 12))
+    if title:
+        ttk.Label(outer, text=title, style="Heading.Card.TLabel").pack(anchor="w")
+    if note:
+        ttk.Label(outer, text=note, style="Muted.Card.TLabel", wraplength=760, justify="left").pack(anchor="w", pady=(0, 6))
+    return outer
+
+
+def header(parent, theme, title, subtitle, on_switch=None):
+    """The top bar: the site's icon and a name, with the light/dark button on the right."""
+    bar = ttk.Frame(parent, padding=(18, 14, 18, 6))
+    bar.pack(fill="x")
+    try:
+        icon = tk.PhotoImage(file=ICON).subsample(6)  # 192 px down to 32
+        label = ttk.Label(bar, image=icon)
+        label.image = icon
+        label.pack(side="left", padx=(0, 12))
+    except tk.TclError:
+        pass
+    words = ttk.Frame(bar)
+    words.pack(side="left")
+    ttk.Label(words, text=title, style="Title.TLabel").pack(anchor="w")
+    ttk.Label(words, text=subtitle, style="Subtitle.TLabel").pack(anchor="w")
+    button = None
+    if on_switch:
+        button = ttk.Button(bar, text=THEME_NAMES.get(theme.choice, THEME_NAMES["system"]), style="Header.TButton",
+                            command=on_switch, cursor="hand2")
+        button.pack(side="right")
+    return button
+
+
 class App:
     def __init__(self, root, minimized):
         self.root = root
@@ -527,41 +741,65 @@ class App:
         self.retry_at = None      # after a failed sync, when to try again
 
         root.title("Choir site sync")
-        root.minsize(620, 460)
-        pad = {"padx": 8, "pady": 4}
+        root.minsize(720, 640)
+        root.geometry("820x720")
+        self.theme = Theme(root, self.settings.get("theme", "system"))
+        self.theme.add(root, "window")
+        try:
+            self.icon = tk.PhotoImage(file=ICON)
+            root.iconphoto(True, self.icon)
+        except tk.TclError:
+            pass
 
-        form = tk.Frame(root)
-        form.pack(fill="x", **pad)
+        self.theme_button = header(root, self.theme, "Choir site sync",
+                                   "Keeps the website's music and PowerPoints in step with your Music folder",
+                                   on_switch=self.switch_theme)
+        body = ttk.Frame(root, padding=(18, 6, 18, 18))
+        body.pack(fill="both", expand=True)
+        gap = {"fill": "x", "pady": (0, 12)}
+
+        # Where to sync from and to.
+        setup = card(body, "Setup")
+        setup.pack(**gap)
+        form = ttk.Frame(setup, style="Card.TFrame", borderwidth=0)
+        form.pack(fill="x", pady=(6, 0))
         form.columnconfigure(1, weight=1)
         self.folder = self.field(form, 0, "Music folder", self.settings["folder"])
-        tk.Button(form, text="Browse...", command=self.browse).grid(row=0, column=2, **pad)
+        ttk.Button(form, text="Browse...", style="Secondary.TButton", command=self.browse,
+                   cursor="hand2").grid(row=0, column=2, padx=(8, 0), pady=4)
         self.site = self.field(form, 1, "Site address", self.settings["site"])
         self.token = self.field(form, 2, "Import token", self.settings["token"], secret=True)
 
-        options = tk.Frame(root)
-        options.pack(fill="x", **pad)
+        # Syncing.
+        sync_card = card(body, "Sync")
+        sync_card.pack(**gap)
         self.auto = tk.BooleanVar(value=self.settings["auto"])
-        tk.Checkbutton(options, text="Update automatically when files change", variable=self.auto,
-                       command=self.changed_auto).pack(side="left")
+        ttk.Checkbutton(sync_card, text="Update automatically when files change", variable=self.auto,
+                        command=self.changed_auto, cursor="hand2").pack(anchor="w", pady=(6, 0))
         self.at_startup = tk.BooleanVar(value=os.name == "nt" and os.path.exists(startup_file()))
         if os.name == "nt":
-            tk.Checkbutton(options, text="Start with Windows", variable=self.at_startup,
-                           command=self.changed_startup).pack(side="left", padx=16)
-
-        buttons = tk.Frame(root)
-        buttons.pack(fill="x", **pad)
-        self.sync_button = tk.Button(buttons, text="Sync now", width=14, command=self.sync_now)
+            ttk.Checkbutton(sync_card, text="Start with Windows (minimised, so automatic updates keep going)",
+                            variable=self.at_startup, command=self.changed_startup, cursor="hand2").pack(anchor="w")
+        buttons = ttk.Frame(sync_card, style="Card.TFrame", borderwidth=0)
+        buttons.pack(fill="x", pady=(10, 4))
+        self.sync_button = ttk.Button(buttons, text="Sync now", command=self.sync_now, cursor="hand2")
         self.sync_button.pack(side="left")
-        tk.Button(buttons, text="Songs...", command=self.open_songs).pack(side="left", padx=6)
-        tk.Button(buttons, text="Fix 'check' rows", command=self.open_plans).pack(side="left")
-        self.remove_button = tk.Button(buttons, text="Remove deleted files...", command=self.remove_deleted,
-                                       state="disabled")
-        self.remove_button.pack(side="left", padx=6)
+        ttk.Button(buttons, text="Songs...", style="Secondary.TButton", command=self.open_songs,
+                   cursor="hand2").pack(side="left", padx=(8, 0))
+        ttk.Button(buttons, text="Fix 'check' rows", style="Secondary.TButton", command=self.open_plans,
+                   cursor="hand2").pack(side="left", padx=(8, 0))
+        self.remove_button = ttk.Button(buttons, text="Remove deleted files...", style="Danger.TButton",
+                                        command=self.remove_deleted, state="disabled", cursor="hand2")
+        self.remove_button.pack(side="right")
+        self.status = ttk.Label(sync_card, text="Not synced yet.", style="Card.TLabel", justify="left", wraplength=740)
+        self.status.pack(anchor="w", pady=(8, 0))
 
-        self.status = tk.Label(root, anchor="w", justify="left", text="Not synced yet.")
-        self.status.pack(fill="x", **pad)
-        self.log = scrolledtext.ScrolledText(root, height=16, state="disabled", font=("Consolas", 9))
-        self.log.pack(fill="both", expand=True, **pad)
+        # What happened.
+        log_card = card(body, "Activity")
+        log_card.pack(fill="both", expand=True)
+        frame, self.log = scrolled(log_card, self.theme, "text", height=12, state="disabled", wrap="word",
+                                   font=(MONO, 9))
+        frame.pack(fill="both", expand=True, pady=(6, 0))
 
         if minimized:
             root.iconify()
@@ -569,12 +807,18 @@ class App:
         root.after(1000, self.check_folder)
 
     def field(self, form, row, label, value, secret=False):
-        tk.Label(form, text=label).grid(row=row, column=0, sticky="w")
-        entry = tk.Entry(form, show="*" if secret else "")
+        ttk.Label(form, text=label, style="Card.TLabel").grid(row=row, column=0, sticky="w", padx=(0, 12))
+        entry = ttk.Entry(form, show="\u2022" if secret else "")
         entry.insert(0, value)
-        entry.grid(row=row, column=1, sticky="ew", padx=8, pady=2)
+        entry.grid(row=row, column=1, sticky="ew", pady=4)
         entry.bind("<FocusOut>", lambda _: self.save())
         return entry
+
+    def switch_theme(self):
+        choice = self.theme.switch()
+        self.theme_button.config(text=THEME_NAMES[choice])
+        self.settings["theme"] = choice
+        save_settings(self.settings)
 
     # -- settings -------------------------------------------------------
 
@@ -637,7 +881,7 @@ class App:
         self.busy = True
         self.sync_button.config(state="disabled")
         self.remove_button.config(state="disabled")
-        self.status.config(text="Syncing...")
+        self.status.config(text="Syncing...", style="Card.TLabel")
         settings = dict(self.settings)
         threading.Thread(target=self.sync_in_background, args=(settings, remove_deleted), daemon=True).start()
 
@@ -666,11 +910,14 @@ class App:
         when = datetime.datetime.now().strftime("%H:%M")
         lines = ["Last sync " + when + (": done." if summary["worked"] else ": had problems (see the log). Automatic updates retry in 15 minutes.")]
         if summary["checks"]:
-            lines.append("{} rows are marked 'check' and weren't uploaded. Click Fix 'check' rows.".format(summary["checks"]))
+            lines.append("{} {} marked 'check' and weren't uploaded. Use Songs... or Fix 'check' rows.".format(
+                summary["checks"], "row is" if summary["checks"] == 1 else "rows are"))
         if summary["removed"]:
-            lines.append("{} files are gone from your folder but still on the site. "
-                         "Click Remove deleted files to take them off.".format(summary["removed"]))
-        self.status.config(text="\n".join(lines))
+            lines.append("{} file{} gone from your folder but still on the site. "
+                         "Click Remove deleted files to take {} off.".format(
+                             summary["removed"], " is" if summary["removed"] == 1 else "s are",
+                             "it" if summary["removed"] == 1 else "them"))
+        self.status.config(text="\n".join(lines), style="Card.TLabel" if summary["worked"] else "Problem.Card.TLabel")
         self.say(lines[0])
 
     def check_folder(self):
@@ -741,61 +988,76 @@ class SongsWindow:
         self.app = app
         self.window = tk.Toplevel(app.root)
         self.window.title("Songs")
-        self.window.minsize(860, 600)
-        pad = {"padx": 8, "pady": 4}
+        self.window.minsize(900, 640)
+        self.window.geometry("1000x820")
+        theme = app.theme
+        theme.add(self.window, "window")
+        header(self.window, theme, "Songs", "Add songs to song_list.csv without opening Excel")
+        body = ttk.Frame(self.window, padding=(18, 6, 18, 18))
+        body.pack(fill="both", expand=True)
 
-        new = tk.LabelFrame(self.window, text="Add a new song")
-        new.pack(fill="x", **pad)
-        new.columnconfigure(1, weight=1)
-        self.title = self.field(new, 0, "Title")
-        self.spellings = self.field(new, 1, "Other spellings")
-        tk.Label(new, text="other ways file names write it, with ; between them", fg="gray").grid(
-            row=2, column=1, sticky="w", padx=8)
-        self.tags = self.field(new, 3, "Tags")
-        tk.Label(new, text="with commas between them, e.g. Marian, Easter", fg="gray").grid(
-            row=4, column=1, sticky="w", padx=8)
-        tk.Button(new, text="Add song", width=14, command=self.add_new).grid(row=5, column=1, sticky="w", padx=8, pady=6)
+        self.message = ttk.Label(body, text="", style="Good.TLabel",
+                                 justify="left", wraplength=900)
+        self.message.pack(side="bottom", anchor="w", pady=(10, 0))
+        new = card(body, "Add a new song")
+        new.pack(fill="x", pady=(0, 12))
+        form = ttk.Frame(new, style="Card.TFrame", borderwidth=0)
+        form.pack(fill="x", pady=(6, 0))
+        form.columnconfigure(1, weight=1)
+        self.title = self.field(form, 0, "Title")
+        self.spellings = self.field(form, 1, "Other spellings", "other ways file names write it, with ; between them")
+        self.tags = self.field(form, 3, "Tags", "with commas between them, e.g. Marian, Easter")
+        ttk.Button(form, text="Add song", command=self.add_new, cursor="hand2").grid(
+            row=5, column=1, sticky="w", pady=(8, 0))
 
-        unknown = tk.LabelFrame(self.window, text="Titles in your folder that aren't on the song list (from the last sync)")
-        unknown.pack(fill="both", expand=True, **pad)
-        lists = tk.Frame(unknown)
-        lists.pack(fill="both", expand=True, padx=8, pady=4)
-        self.list = tk.Listbox(lists, height=10, width=36, exportselection=False)
-        self.list.pack(side="left", fill="both", expand=True)
+        unknown = card(body, "Titles not on the song list",
+                       "Files from your folder that are waiting as 'check' (from the last sync). Click a title "
+                       "to see its files, then add it as a new song or link it to the song it really is.")
+        unknown.pack(fill="both", expand=True)
+        actions = ttk.Frame(unknown, style="Card.TFrame", borderwidth=0)
+        actions.pack(side="bottom", fill="x", pady=(10, 0))  # packed first, so it never gets squeezed out
+        ttk.Button(actions, text="Add as a new song", command=self.add_picked, cursor="hand2").pack(side="left")
+        ttk.Label(actions, text="or it's another spelling of", style="Card.TLabel").pack(side="left", padx=10)
+        self.same_as = ttk.Combobox(actions, width=34, font=(FONT, 10))
+        self.same_as.pack(side="left")
+        self.same_as.bind("<KeyRelease>", lambda _: self.filter_titles())
+        ttk.Button(actions, text="Link", style="Secondary.TButton", command=self.link_picked,
+                   cursor="hand2").pack(side="left", padx=(8, 0))
+
+        lists = ttk.Frame(unknown, style="Card.TFrame", borderwidth=0)
+        lists.pack(fill="both", expand=True, pady=(4, 0))
+        frame, self.list = scrolled(lists, theme, "list", height=7, width=34, exportselection=False,
+                                    activestyle="none", font=(FONT, 10))
+        frame.pack(side="left", fill="both", expand=True)
         self.list.bind("<<ListboxSelect>>", lambda _: self.picked())
 
         # The picked title's files, and what's in the one picked.
-        files = tk.Frame(lists)
-        files.pack(side="left", fill="both", expand=True, padx=(8, 0))
-        tk.Label(files, text="Its files:", anchor="w").pack(fill="x")
-        self.files = tk.Listbox(files, height=4, exportselection=False)
-        self.files.pack(fill="x")
+        files = ttk.Frame(lists, style="Card.TFrame", borderwidth=0)
+        files.pack(side="left", fill="both", expand=True, padx=(12, 0))
+        ttk.Label(files, text="Its files", style="Muted.Card.TLabel").pack(anchor="w")
+        frame, self.files = scrolled(files, theme, "list", height=4, exportselection=False,
+                                     activestyle="none", font=(FONT, 10))
+        frame.pack(fill="x")
         self.files.bind("<<ListboxSelect>>", lambda _: self.show_file())
         self.files.bind("<Double-Button-1>", lambda _: self.open_picked_file(False))
-        file_buttons = tk.Frame(files)
-        file_buttons.pack(fill="x", pady=4)
-        tk.Button(file_buttons, text="Open file", command=lambda: self.open_picked_file(False)).pack(side="left")
-        tk.Button(file_buttons, text="Show in folder", command=lambda: self.open_picked_file(True)).pack(side="left", padx=6)
-        self.details = scrolledtext.ScrolledText(files, height=12, width=48, wrap="word", state="disabled",
-                                                 font=("Segoe UI", 9))
-        self.details.pack(fill="both", expand=True)
-        actions = tk.Frame(unknown)
-        actions.pack(fill="x", padx=8, pady=4)
-        tk.Button(actions, text="Add as a new song", command=self.add_picked).pack(side="left")
-        tk.Label(actions, text="  or it's another spelling of").pack(side="left")
-        self.same_as = ttk.Combobox(actions, width=32)
-        self.same_as.pack(side="left", padx=4)
-        self.same_as.bind("<KeyRelease>", lambda _: self.filter_titles())
-        tk.Button(actions, text="Link", command=self.link_picked).pack(side="left")
+        file_buttons = ttk.Frame(files, style="Card.TFrame", borderwidth=0)
+        file_buttons.pack(fill="x", pady=8)
+        ttk.Button(file_buttons, text="Open file", style="Secondary.TButton", cursor="hand2",
+                   command=lambda: self.open_picked_file(False)).pack(side="left")
+        ttk.Button(file_buttons, text="Show in folder", style="Secondary.TButton", cursor="hand2",
+                   command=lambda: self.open_picked_file(True)).pack(side="left", padx=(8, 0))
+        frame, self.details = scrolled(files, theme, "text", height=8, width=48, wrap="word", state="disabled",
+                                       font=(FONT, 10))
+        frame.pack(fill="both", expand=True)
 
-        self.message = tk.Label(self.window, anchor="w", justify="left", fg="darkgreen")
-        self.message.pack(fill="x", **pad)
         self.refresh()
 
-    def field(self, frame, row, label):
-        tk.Label(frame, text=label).grid(row=row, column=0, sticky="w", padx=8)
-        entry = tk.Entry(frame)
-        entry.grid(row=row, column=1, sticky="ew", padx=8, pady=2)
+    def field(self, frame, row, label, hint=None):
+        ttk.Label(frame, text=label, style="Card.TLabel").grid(row=row, column=0, sticky="w", padx=(0, 12))
+        entry = ttk.Entry(frame)
+        entry.grid(row=row, column=1, sticky="ew", pady=(4, 0 if hint else 4))
+        if hint:
+            ttk.Label(frame, text=hint, style="Muted.Card.TLabel").grid(row=row + 1, column=1, sticky="w")
         return entry
 
     def refresh(self):
@@ -863,8 +1125,7 @@ class SongsWindow:
             self.details.insert("end", value + "\n")
         if words:
             self.details.insert("end", "\nWords inside:\n", "label")
-            self.details.insert("end", words)
-        self.details.tag_config("label", font=("Segoe UI", 9, "bold"))
+            self.details.insert("end", words, "words")
         self.details.config(state="disabled")
 
     def open_picked_file(self, show_in_folder):

@@ -554,6 +554,10 @@ running the scripts from there as before.
   its folder in File Explorer with the file picked out. The next
   sync uploads its files. Close `song_list.csv` in Excel first.
 - **Fix 'check' rows** opens `import_plan.csv` and `slides_plan.csv`.
+- The app uses the site's colours and fonts. The button at the top right
+  switches between light, dark and the same as Windows (the colours are
+  `LIGHT` and `DARK` in `sync_app.py`; keep them in step with
+  `public/styles.css`).
 
 A sync never asks questions, so it plays safe:
 
