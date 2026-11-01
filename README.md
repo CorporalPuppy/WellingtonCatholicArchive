@@ -546,7 +546,12 @@ running the scripts from there as before.
   that is a list of titles from your folder that aren't on the song list
   yet (the files waiting as `check`). Pick one and either click **Add as a
   new song** (you can tidy its spelling first), or choose the song it
-  really is and click **Link** to add it as another spelling. The next
+  really is and click **Link** to add it as another spelling. To tell
+  which song a title is, click it to see its files: each shows its type,
+  key, version, size and date, any title or author saved inside it
+  (PowerPoint, Word, PDF, MuseScore, MP3), and the first words on its
+  slides or pages. **Open file** opens it, and **Show in folder** opens
+  its folder in File Explorer with the file picked out. The next
   sync uploads its files. Close `song_list.csv` in Excel first.
 - **Fix 'check' rows** opens `import_plan.csv` and `slides_plan.csv`.
 

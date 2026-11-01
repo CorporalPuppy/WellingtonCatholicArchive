@@ -37,6 +37,7 @@ import csv
 import datetime
 import difflib
 import hashlib
+import html
 import json
 import os
 import queue
@@ -44,6 +45,7 @@ import re
 import subprocess
 import sys
 import threading
+import zipfile
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
@@ -294,13 +296,13 @@ def add_spelling(title, spelling):
 def unknown_titles():
     """
     Titles of files in your folder that don't match any song on the list,
-    from the last scan (the "check" rows in import_plan.csv), with how many
-    files each has. Ones the list now matches are left out.
+    from the last scan (the "check" rows in import_plan.csv), each with its
+    rows from the plan (one per file). Ones the list now matches are left out.
     """
     if not os.path.exists(MUSIC_PLAN) or not os.path.exists(SONG_LIST):
         return []
     lookup = song_lookup(read_song_rows()[0])
-    counts = {}
+    files = {}
     for row in read_csv(MUSIC_PLAN):
         if (row.get("status") or "").strip().lower() != "check":
             continue
@@ -308,8 +310,181 @@ def unknown_titles():
             continue
         title = (row.get("song_title") or "").strip()
         if title and match_key(title) not in lookup:
-            counts[title] = counts.get(title, 0) + 1
-    return sorted(counts.items(), key=lambda item: item[0].lower())
+            files.setdefault(title, []).append(row)
+    return sorted(files.items(), key=lambda item: item[0].lower())
+
+
+# ---------------------------------------------------------------------------
+# What's in a file: to tell which song it is without opening it
+# ---------------------------------------------------------------------------
+
+FILE_TYPES = {
+    ".pdf": "PDF", ".doc": "Word document (old)", ".docx": "Word document", ".odt": "OpenDocument text",
+    ".mscz": "MuseScore score", ".mscx": "MuseScore score", ".ppt": "PowerPoint (old)", ".pptx": "PowerPoint",
+    ".odp": "OpenDocument slides", ".jpg": "Picture", ".jpeg": "Picture", ".png": "Picture",
+    ".mp3": "Recording", ".m4a": "Recording", ".wav": "Recording", ".cho": "ChordPro chords", ".chordpro": "ChordPro chords",
+}
+
+# The most words shown from inside a file.
+PREVIEW_LETTERS = 600
+
+
+def xml_text(xml, tag):
+    """The words inside every <tag>...</tag> in some XML, joined into lines."""
+    found = re.findall(r"<" + tag + r"(?:\s[^>]*)?>([^<]*)</" + tag + r">", xml)
+    return html.unescape(" ".join(found))
+
+
+def office_details(path, ending):
+    """Title, author and the first words of a PowerPoint, Word or OpenDocument file (all zip files of XML)."""
+    details, words = [], ""
+    try:
+        with zipfile.ZipFile(path) as package:
+            names = set(package.namelist())
+            if "docProps/core.xml" in names:  # PowerPoint and Word
+                core = package.read("docProps/core.xml").decode("utf-8", "replace")
+                for label, tag in (("Title", "dc:title"), ("Subject", "dc:subject"), ("Author", "dc:creator"),
+                                   ("Last saved by", "cp:lastModifiedBy")):
+                    value = xml_text(core, tag).strip()
+                    if value:
+                        details.append((label, value))
+            if "meta.xml" in names:  # OpenDocument
+                meta = package.read("meta.xml").decode("utf-8", "replace")
+                for label, tag in (("Title", "dc:title"), ("Author", "meta:initial-creator")):
+                    value = xml_text(meta, tag).strip()
+                    if value:
+                        details.append((label, value))
+            if ending == ".pptx":
+                slides = sorted((name for name in names if re.match(r"ppt/slides/slide\d+\.xml$", name)),
+                                key=lambda name: int(re.search(r"(\d+)\.xml$", name).group(1)))
+                details.append(("Slides", str(len(slides))))
+                words = "\n".join(xml_text(paragraph, "a:t") for name in slides[:6]
+                                  for paragraph in package.read(name).decode("utf-8", "replace").split("</a:p>"))
+            elif ending == ".docx" and "word/document.xml" in names:
+                document = package.read("word/document.xml").decode("utf-8", "replace")
+                words = "\n".join(xml_text(paragraph, "w:t") for paragraph in document.split("</w:p>"))
+            elif ending in (".odt", ".odp") and "content.xml" in names:
+                content = package.read("content.xml").decode("utf-8", "replace")
+                words = "\n".join(html.unescape(re.sub(r"<[^>]+>", "", part)) for part in content.split("</text:p>"))
+            elif ending == ".mscz":
+                score = next((name for name in names if name.endswith(".mscx")), None)
+                if score:
+                    xml = package.read(score).decode("utf-8", "replace")
+                    for label, name in (("Title", "workTitle"), ("Composer", "composer"), ("Lyricist", "lyricist")):
+                        match = re.search(r'<metaTag name="' + name + r'">([^<]+)</metaTag>', xml)
+                        if match:
+                            details.append((label, html.unescape(match.group(1))))
+                    words = " ".join(xml_text(xml, "text").split())
+    except (zipfile.BadZipFile, KeyError, OSError, ValueError):
+        pass
+    return details, words
+
+
+def pdf_details(path):
+    """The title and author a PDF says it has, when it says (not every PDF does)."""
+    details = []
+    try:
+        with open(path, "rb") as f:
+            start = f.read(200_000)
+            f.seek(max(0, os.path.getsize(path) - 200_000))
+            data = start + f.read()
+    except OSError:
+        return details
+    for label, key in (("Title", b"/Title"), ("Author", b"/Author"), ("Made with", b"/Creator")):
+        match = re.search(re.escape(key) + rb"\s*\(((?:[^()\\]|\\.){1,200})\)", data)
+        if match:
+            raw = match.group(1)
+            # Text written as UTF-16 (starting FE FF) or plain letters.
+            value = raw[2:].decode("utf-16-be", "replace") if raw.startswith(b"\xfe\xff") else raw.decode("latin-1")
+            value = value.replace("\\(", "(").replace("\\)", ")").strip()
+            if value:
+                details.append((label, value))
+    pages = len(re.findall(rb"/Type\s*/Page[^s]", start))
+    if pages:
+        details.append(("Pages", str(pages) + " or more" if len(start) == 200_000 else str(pages)))
+    return details
+
+
+def mp3_details(path):
+    """The song title and artist an MP3 carries (its ID3 tag), if any."""
+    details = []
+    try:
+        with open(path, "rb") as f:
+            header = f.read(10)
+            if header[:3] != b"ID3":
+                return details
+            size = (header[6] << 21) | (header[7] << 14) | (header[8] << 7) | header[9]
+            tag = f.read(min(size, 500_000))
+    except OSError:
+        return details
+    labels = {b"TIT2": "Title", b"TPE1": "Artist", b"TALB": "Album"}
+    place = 0
+    while place + 10 <= len(tag) and tag[place:place + 4].strip(b"\x00"):
+        frame, length = tag[place:place + 4], int.from_bytes(tag[place + 4:place + 8], "big")
+        body = tag[place + 10:place + 10 + length]
+        if frame in labels and body:
+            encoding = {0: "latin-1", 1: "utf-16", 2: "utf-16-be", 3: "utf-8"}.get(body[0], "latin-1")
+            value = body[1:].decode(encoding, "replace").strip("\x00 ")
+            if value:
+                details.append((labels[frame], value))
+        place += 10 + length
+    return details
+
+
+def describe_file(row):
+    """Lines describing one file: what the scan made of it, then what's inside it."""
+    path = row.get("file") or ""
+    ending = os.path.splitext(path)[1].lower()
+    lines = [("File", os.path.basename(path)), ("Folder", os.path.dirname(path)),
+             ("Type", FILE_TYPES.get(ending, ending or "unknown"))]
+    for label, column in (("Kind", "kind"), ("Key", "key"), ("Version", "version"), ("Note", "note")):
+        value = (row.get(column) or "").strip()
+        if column == "note":
+            # Every file here is "not on song_list.csv"; only the scan's other hints are worth showing.
+            value = value.split("; ", 1)[1] if value.startswith("not on song_list.csv") and "; " in value else (
+                "" if value.startswith("not on song_list.csv") else value)
+        if value:
+            lines.append((label, value))
+    words = ""
+    try:
+        info = os.stat(path)
+        lines.append(("Size", "{:,.0f} KB".format(info.st_size / 1000)))
+        lines.append(("Changed", datetime.datetime.fromtimestamp(info.st_mtime).strftime("%d %b %Y %H:%M")))
+    except OSError:
+        lines.append(("Size", "the file isn't there any more"))
+        return lines, ""
+    if ending in (".pptx", ".docx", ".odt", ".odp", ".mscz"):
+        details, words = office_details(path, ending)
+        lines += details
+    elif ending == ".pdf":
+        lines += pdf_details(path)
+    elif ending == ".mp3":
+        lines += mp3_details(path)
+    elif ending in (".cho", ".chordpro", ".mscx"):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                words = f.read(20_000)
+            if ending == ".mscx":
+                words = " ".join(xml_text(words, "text").split())
+        except OSError:
+            pass
+    words = re.sub(r"\n\s*\n+", "\n", words).strip()
+    if len(words) > PREVIEW_LETTERS:
+        words = words[:PREVIEW_LETTERS].rsplit(" ", 1)[0] + " ..."
+    return lines, words
+
+
+def open_file(path, show_in_folder=False):
+    """Opens a file, or the folder it's in with the file picked out."""
+    if os.name == "nt":
+        if show_in_folder:
+            subprocess.Popen('explorer /select,"{}"'.format(os.path.normpath(path)))
+        else:
+            os.startfile(path)
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", "-R", path] if show_in_folder else ["open", path])
+    else:
+        subprocess.Popen(["xdg-open", os.path.dirname(path) if show_in_folder else path])
 
 
 # ---------------------------------------------------------------------------
@@ -566,7 +741,7 @@ class SongsWindow:
         self.app = app
         self.window = tk.Toplevel(app.root)
         self.window.title("Songs")
-        self.window.minsize(560, 480)
+        self.window.minsize(860, 600)
         pad = {"padx": 8, "pady": 4}
 
         new = tk.LabelFrame(self.window, text="Add a new song")
@@ -583,9 +758,27 @@ class SongsWindow:
 
         unknown = tk.LabelFrame(self.window, text="Titles in your folder that aren't on the song list (from the last sync)")
         unknown.pack(fill="both", expand=True, **pad)
-        self.list = tk.Listbox(unknown, height=10, exportselection=False)
-        self.list.pack(fill="both", expand=True, padx=8, pady=4)
+        lists = tk.Frame(unknown)
+        lists.pack(fill="both", expand=True, padx=8, pady=4)
+        self.list = tk.Listbox(lists, height=10, width=36, exportselection=False)
+        self.list.pack(side="left", fill="both", expand=True)
         self.list.bind("<<ListboxSelect>>", lambda _: self.picked())
+
+        # The picked title's files, and what's in the one picked.
+        files = tk.Frame(lists)
+        files.pack(side="left", fill="both", expand=True, padx=(8, 0))
+        tk.Label(files, text="Its files:", anchor="w").pack(fill="x")
+        self.files = tk.Listbox(files, height=4, exportselection=False)
+        self.files.pack(fill="x")
+        self.files.bind("<<ListboxSelect>>", lambda _: self.show_file())
+        self.files.bind("<Double-Button-1>", lambda _: self.open_picked_file(False))
+        file_buttons = tk.Frame(files)
+        file_buttons.pack(fill="x", pady=4)
+        tk.Button(file_buttons, text="Open file", command=lambda: self.open_picked_file(False)).pack(side="left")
+        tk.Button(file_buttons, text="Show in folder", command=lambda: self.open_picked_file(True)).pack(side="left", padx=6)
+        self.details = scrolledtext.ScrolledText(files, height=12, width=48, wrap="word", state="disabled",
+                                                 font=("Segoe UI", 9))
+        self.details.pack(fill="both", expand=True)
         actions = tk.Frame(unknown)
         actions.pack(fill="x", padx=8, pady=4)
         tk.Button(actions, text="Add as a new song", command=self.add_picked).pack(side="left")
@@ -616,7 +809,9 @@ class SongsWindow:
         self.same_as["values"] = self.all_titles
         self.list.delete(0, "end")
         for title, files in self.unknown:
-            self.list.insert("end", "{}   ({} file{})".format(title, files, "" if files == 1 else "s"))
+            self.list.insert("end", "{}   ({} file{})".format(title, len(files), "" if len(files) == 1 else "s"))
+        self.files.delete(0, "end")
+        self.show_details([], "")
         if not self.unknown:
             self.list.insert("end", "None: every file matches a song on the list.")
 
@@ -639,6 +834,52 @@ class SongsWindow:
             close = difflib.get_close_matches(title, self.all_titles, n=8, cutoff=0.5)
             self.same_as["values"] = close or self.all_titles
             self.same_as.set(close[0] if close else "")
+            self.files.delete(0, "end")
+            for row in self.unknown[chosen[0]][1]:
+                kind = (row.get("kind") or "").strip()
+                self.files.insert("end", os.path.basename(row.get("file") or "") + ("   [" + kind + "]" if kind else ""))
+            self.files.selection_set(0)
+            self.show_file()
+
+    def picked_file(self):
+        title, file = self.list.curselection(), self.files.curselection()
+        if not title or not file or not self.unknown:
+            return None
+        return self.unknown[title[0]][1][file[0]]
+
+    def show_file(self):
+        row = self.picked_file()
+        if row is None:
+            self.show_details([], "")
+            return
+        lines, words = describe_file(row)
+        self.show_details(lines, words)
+
+    def show_details(self, lines, words):
+        self.details.config(state="normal")
+        self.details.delete("1.0", "end")
+        for label, value in lines:
+            self.details.insert("end", label + ": ", "label")
+            self.details.insert("end", value + "\n")
+        if words:
+            self.details.insert("end", "\nWords inside:\n", "label")
+            self.details.insert("end", words)
+        self.details.tag_config("label", font=("Segoe UI", 9, "bold"))
+        self.details.config(state="disabled")
+
+    def open_picked_file(self, show_in_folder):
+        row = self.picked_file()
+        if row is None:
+            messagebox.showinfo("Songs", "Click a title, then one of its files.", parent=self.window)
+            return
+        path = row.get("file") or ""
+        if not os.path.exists(path):
+            messagebox.showinfo("Songs", "That file isn't there any more:\n" + path, parent=self.window)
+            return
+        try:
+            open_file(path, show_in_folder)
+        except OSError as error:
+            messagebox.showerror("Songs", "Couldn't open it: " + str(error), parent=self.window)
 
     def done(self, problem, success):
         if problem:
