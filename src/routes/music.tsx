@@ -14,7 +14,7 @@
 import { Hono } from "hono";
 import { getAllSongFileSummaries, getSong, getSongFile, getSongFiles, getSongs } from "../database";
 import type { SongFileSummary } from "../database";
-import { canSeeMemberPages, describeFileLabels, formatFileSize, formatUploadDate, isAlwaysPublicKind, printableAs, splitTags } from "../helpers";
+import { canSeeMemberPages, describeFileLabels, formatFileSize, formatUploadDate, isAlwaysPublicKind, printableAs } from "../helpers";
 import { raw } from "hono/html";
 import { sendFileFromStorage } from "../files";
 import { requireMemberAccess } from "../middleware";
@@ -34,7 +34,6 @@ routes.use("/prayers/*", requireMemberAccess);
 
 // ---------------------------------------------------------------------------
 // List of songs, with a search box: GET /music?search=amazing
-//   and a tag filter:                GET /music?tag=Marian
 //   only recently changed songs:     GET /music?updated=week (or month, year)
 //   sorted another way:              GET /music?sort=updated (or za, added)
 // List of prayers and services:      GET /prayers?search=creed
@@ -52,16 +51,12 @@ async function showSongList(c: Context<AppEnv>, section: "music" | "prayers") {
   // ?has=sheet shows only songs with sheet music (or chords, recording...).
   const has = c.req.query("has") ?? "";
   const filter = RESOURCE_FILTERS.find((item) => item.kind === has) ?? null;
-  // ?tag=Marian shows only songs with that tag.
-  const tag = c.req.query("tag") ?? "";
   // ?updated=week shows only songs with a file uploaded or changed lately.
   const updated = UPDATED_FILTERS.some((item) => item.value === c.req.query("updated")) ? c.req.query("updated")! : "";
   const since = updatedSince(updated);
   // ?sort=updated puts the latest changes first ("" = A to Z, in letter groups).
   const sort = SONG_SORTS.find((item) => item.value === c.req.query("sort"))?.value ?? "";
   const allSongs = await getSongs(c.env.DB, search, section);
-  // Every tag used in this section, for the tag menu.
-  const allTags = [...new Set(allSongs.flatMap((song) => splitTags(song.tags)))].sort((a, b) => a.localeCompare(b));
   const filesBySong = groupFilesBySong(await getAllSongFileSummaries(c.env.DB));
   const filesOf = (song: SongRow) => filesBySong.get(song.id) ?? [];
   const updatedAt = (song: SongRow) => lastUpdated(song, filesOf(song));
@@ -69,7 +64,6 @@ async function showSongList(c: Context<AppEnv>, section: "music" | "prayers") {
     allSongs.filter(
       (song) =>
         (filter === null || filesOf(song).some((file) => file.kind === filter.kind)) &&
-        (tag === "" || splitTags(song.tags).includes(tag)) &&
         (since === "" || updatedAt(song) >= since),
     ),
     sort,
@@ -84,7 +78,7 @@ async function showSongList(c: Context<AppEnv>, section: "music" | "prayers") {
 
   /** The address of this page with a different filter, keeping the search. */
   function filterLink(kind: string): string {
-    return pageLink(address, { search: search, has: kind, tag: tag, updated: updated, sort: sort });
+    return pageLink(address, { search: search, has: kind, updated: updated, sort: sort });
   }
 
   return renderPage(
@@ -105,9 +99,8 @@ async function showSongList(c: Context<AppEnv>, section: "music" | "prayers") {
           )}
         </p>
         <form method="get" action={address} class="search music-search music-search-wide">
-          <input type="search" name="search" value={search} placeholder={isPrayers ? "Search by name or tag" : "Search by title, author or tag"} />
+          <input type="search" name="search" value={search} placeholder={isPrayers ? "Search by name" : "Search by title or author"} />
           {filter !== null && <input type="hidden" name="has" value={filter.kind} />}
-          {allTags.length > 0 && <FilterSelect name="tag" label="Tag" anyLabel="Any tag" options={allTags} selected={tag} />}
           <FilterSelect name="updated" label="Updated" anyLabel="Updated any time" options={UPDATED_FILTERS} selected={updated} />
           <FilterSelect name="sort" label="Sort by" anyLabel="A to Z" options={SONG_SORTS.filter((item) => item.value !== "")} selected={sort} />
           <button type="submit">Search</button>
@@ -131,9 +124,8 @@ async function showSongList(c: Context<AppEnv>, section: "music" | "prayers") {
         {songs.length === 1 ? "1 " + (isPrayers ? "item" : "song") : songs.length + (isPrayers ? " items" : " songs")}
         {search !== "" && <> matching "{search}"</>}
         {filter !== null && <> with {filter.label.toLowerCase()}</>}
-        {tag !== "" && <> tagged {tag}</>}
         {updated !== "" && <> updated in the {UPDATED_FILTERS.find((item) => item.value === updated)!.label.toLowerCase()}</>}
-        {(search !== "" || filter !== null || tag !== "" || updated !== "" || sort !== "") && (
+        {(search !== "" || filter !== null || updated !== "" || sort !== "") && (
           <>
             {" · "}
             <a href={address}>Clear</a>
@@ -251,7 +243,6 @@ function SongCard(props: { song: SongRow; href: string; files: SongFileSummary[]
       <span class="score-card-text">
         <strong>{song.title}</strong>
         {song.author !== "" && <span class="score-card-author">{song.author}</span>}
-        {song.tags !== "" && <span class="song-tags">{splitTags(song.tags).join(" · ")}</span>}
         {props.date !== "" && <span class="score-card-date">{props.date}</span>}
         {available.length > 0 && (
           <span class="score-card-kinds">

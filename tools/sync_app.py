@@ -50,7 +50,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from import_music import SONG_LIST_COLUMNS, match_key, read_csv, tidy_tags  # noqa: E402
+from import_music import SONG_LIST_COLUMNS, match_key, read_csv  # noqa: E402
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 # The spreadsheets live where you've always run the scripts from: the
@@ -60,9 +60,8 @@ SETTINGS_FILE = os.path.join(WORK_FOLDER, "sync_settings.json")
 
 MUSIC_PLAN = os.path.join(WORK_FOLDER, "import_plan.csv")
 SONG_LIST = os.path.join(WORK_FOLDER, "song_list.csv")
-SUGGESTIONS = os.path.join(WORK_FOLDER, "tag_suggestions.csv")
 SLIDES_PLAN = os.path.join(WORK_FOLDER, "slides_plan.csv")
-SPREADSHEETS = [SONG_LIST, MUSIC_PLAN, SUGGESTIONS, SLIDES_PLAN]
+SPREADSHEETS = [SONG_LIST, MUSIC_PLAN, SLIDES_PLAN]
 
 # How often the folder is looked at, in seconds. Looking costs nothing on
 # the site: only a real change leads to a sync.
@@ -200,13 +199,13 @@ def sync(settings, say, remove_deleted=False):
         say("Music: skipped. Do the first music import by hand (see README), then the app takes over.")
     else:
         say("Music: scanning...")
-        worked, text = run_script([music, "scan", folder, "--plan", MUSIC_PLAN, "--songs", SONG_LIST,
-                                   "--suggestions", SUGGESTIONS], token, say)
+        worked, text = run_script([music, "scan", folder, "--plan", MUSIC_PLAN, "--songs", SONG_LIST],
+                                  token, say)
         summary["checks"] += number_after(r"check:\s*(\d+)", text)
         if worked:
             say("Music: uploading...")
-            worked, text = run_script([music, "upload", "--site", site, "--plan", MUSIC_PLAN, "--songs", SONG_LIST,
-                                       "--suggestions", SUGGESTIONS] + keep, token, say, answer)
+            worked, text = run_script([music, "upload", "--site", site, "--plan", MUSIC_PLAN] + keep,
+                                      token, say, answer)
             if not remove_deleted:
                 summary["removed"] += number_after(r"These (\d+) files are on the site but gone", text)
         summary["worked"] &= worked and "failed" not in text
@@ -260,7 +259,7 @@ def split_spellings(text):
     return [part.strip() for part in (text or "").split(";") if part.strip()]
 
 
-def add_song(title, other_spellings="", tags=""):
+def add_song(title, other_spellings=""):
     """Adds a new song to song_list.csv. Returns a problem to show, or None if it worked."""
     title = re.sub(r"\s+", " ", title or "").strip()
     if not title:
@@ -272,13 +271,13 @@ def add_song(title, other_spellings="", tags=""):
         if match_key(spelling) in lookup:
             return '"{}" is already on the list, as "{}".'.format(spelling, lookup[match_key(spelling)])
     song = {column: "" for column in columns}
-    song.update(title=title, other_spellings="; ".join(spellings), tags=tidy_tags(tags), note="added in the sync app")
+    song.update(title=title, other_spellings="; ".join(spellings), note="added in the sync app")
     rows.append(song)
     write_song_rows(rows, columns)
     return None
 
 
-def update_song(original_title, title, other_spellings="", tags="", note=None):
+def update_song(original_title, title, other_spellings="", note=None):
     """
     Changes a song on song_list.csv. A new title keeps the old one as another
     spelling, so files named the old way still belong to it. Returns a
@@ -304,7 +303,7 @@ def update_song(original_title, title, other_spellings="", tags="", note=None):
     for spelling in [title] + kept:
         if match_key(spelling) in others:
             return '"{}" is already used by "{}".'.format(spelling, others[match_key(spelling)])
-    song.update(title=title, other_spellings="; ".join(kept), tags=tidy_tags(tags))
+    song.update(title=title, other_spellings="; ".join(kept))
     if note is not None:
         song["note"] = note.strip()
     write_song_rows(rows, columns)
@@ -1075,9 +1074,8 @@ class SongsWindow:
         form.columnconfigure(1, weight=1)
         self.title = self.field(form, 0, "Title")
         self.spellings = self.field(form, 1, "Other spellings", "other ways file names write it, with ; between them")
-        self.tags = self.field(form, 3, "Tags", "with commas between them, e.g. Marian, Easter")
         ttk.Button(form, text="Add song", command=self.add_new, cursor="hand2").grid(
-            row=5, column=1, sticky="w", pady=(8, 0))
+            row=3, column=1, sticky="w", pady=(8, 0))
 
         unknown = card(body, "Titles not on the song list",
                        "Files from your folder that are waiting as 'check' (from the last sync). Click a title "
@@ -1135,7 +1133,7 @@ class SongsWindow:
         theme = self.app.theme
         self.editing = None  # the title of the song in the form
 
-        picker = card(tab, "Your songs", "Every song on song_list.csv. Type to search titles, spellings and tags, "
+        picker = card(tab, "Your songs", "Every song on song_list.csv. Type to search titles and spellings, "
                                          "then click a song to change it.")
         picker.pack(side="left", fill="both", expand=True, padx=(0, 12))
         self.search = ttk.Entry(picker)
@@ -1156,11 +1154,10 @@ class SongsWindow:
         self.edit_title = self.field(form, 0, "Title",
                                      "change it to rename the song: the old title is kept as another spelling")
         self.edit_spellings = self.field(form, 2, "Other spellings", "with ; between them")
-        self.edit_tags = self.field(form, 4, "Tags", "with commas between them, e.g. Marian, Easter")
-        self.edit_note = self.field(form, 6, "Note", "just for you; the site doesn't use it")
+        self.edit_note = self.field(form, 4, "Note", "just for you; the site doesn't use it")
         self.edit_info = ttk.Label(form, text="Pick a song on the left.", style="Muted.Card.TLabel",
                                    wraplength=380, justify="left")
-        self.edit_info.grid(row=8, column=1, sticky="w", pady=(8, 0))
+        self.edit_info.grid(row=6, column=1, sticky="w", pady=(8, 0))
         buttons = ttk.Frame(edit, style="Card.TFrame", borderwidth=0)
         buttons.pack(fill="x", pady=(12, 0))
         ttk.Button(buttons, text="Save changes", command=self.save_song, cursor="hand2").pack(side="left")
@@ -1173,12 +1170,10 @@ class SongsWindow:
         typed = match_key(self.search.get())
         self.shown_songs = [song for song in self.songs
                             if not typed or typed in match_key((song.get("title") or "") + " " +
-                                                               (song.get("other_spellings") or "") + " " +
-                                                               (song.get("tags") or ""))]
+                                                               (song.get("other_spellings") or ""))]
         self.song_list.delete(0, "end")
         for song in self.shown_songs:
-            tags = (song.get("tags") or "").strip()
-            self.song_list.insert("end", song["title"].strip() + ("   \u00b7 " + tags if tags else ""))
+            self.song_list.insert("end", song["title"].strip())
         self.song_count.config(text="{} of {} songs".format(len(self.shown_songs), len(self.songs))
                                if typed else "{} songs".format(len(self.songs)))
         # Keep the song being edited picked, if it's still in the list.
@@ -1195,7 +1190,7 @@ class SongsWindow:
         if song is None:
             return
         for entry, column in ((self.edit_title, "title"), (self.edit_spellings, "other_spellings"),
-                              (self.edit_tags, "tags"), (self.edit_note, "note")):
+                              (self.edit_note, "note")):
             entry.delete(0, "end")
             entry.insert(0, (song.get(column) or "").strip())
         files = self.file_counts.get(self.editing.lower(), 0)
@@ -1208,8 +1203,7 @@ class SongsWindow:
             messagebox.showinfo("Songs", "Pick a song on the left first.", parent=self.window)
             return
         old, new = self.editing, self.edit_title.get().strip()
-        problem = self.save(lambda: update_song(old, new, self.edit_spellings.get(), self.edit_tags.get(),
-                                                self.edit_note.get()))
+        problem = self.save(lambda: update_song(old, new, self.edit_spellings.get(), self.edit_note.get()))
         if not problem:
             self.editing = re.sub(r"\s+", " ", new)
         renamed = ' Its files move to the new name on the next sync; the old song shows under "Resolve now" ' \
@@ -1231,7 +1225,7 @@ class SongsWindow:
         problem = self.save(lambda: delete_song(title))
         if not problem:
             self.editing = None
-            for entry in (self.edit_title, self.edit_spellings, self.edit_tags, self.edit_note):
+            for entry in (self.edit_title, self.edit_spellings, self.edit_note):
                 entry.delete(0, "end")
             self.edit_info.config(text="Pick a song on the left.")
         self.done(problem, 'Took "{}" off song_list.csv.'.format(title))
@@ -1342,9 +1336,9 @@ class SongsWindow:
 
     def add_new(self):
         title = self.title.get().strip()
-        problem = self.save(lambda: add_song(title, self.spellings.get(), self.tags.get()))
+        problem = self.save(lambda: add_song(title, self.spellings.get()))
         if not problem:
-            for entry in (self.title, self.spellings, self.tags):
+            for entry in (self.title, self.spellings):
                 entry.delete(0, "end")
         self.done(problem, 'Added "{}" to song_list.csv.'.format(title))
 
@@ -1354,7 +1348,7 @@ class SongsWindow:
             # The title from the file name, tidied by hand if you like.
             self.title.delete(0, "end")
             self.title.insert(0, title)
-            self.message.config(text='Check the title above (fix its spelling if needed, add tags), then click Add song. '
+            self.message.config(text='Check the title above (fix its spelling if needed), then click Add song. '
                                      'If you change it, the file name\'s spelling is kept as another spelling.')
             self.spellings.delete(0, "end")
             self.spellings.insert(0, title)

@@ -382,26 +382,6 @@ Python's built-in libraries.
    "Let My Tongue Be Silenced"), keep one, add the other spelling to it and
    delete the other row. `found_in` shows which kinds of file each song
    has (just for your information: a song with only chords is fine). The script never changes this file again, so your fixes stick.
-   The `tags` column takes tags for each song, with commas between them
-   (e.g. `Marian, Easter, Communion`). They show on the Music page, which
-   can be filtered by tag. A song list made before tags existed gets an
-   empty `tags` column on the next scan. Tags can also be set on a song's
-   admin page.
-
-   To have tags suggested, scan with `--suggest-tags`. Each song on the
-   list is looked up on hymnary.org, which records how hymnals file it
-   (Mary, Easter, Communion...). Answers are kept in `hymnary_cache.json`,
-   so each song is looked up once, with a 3 second pause between requests
-   (the first run takes about 45 minutes for 450 songs and can be stopped
-   with Ctrl+C and carried on later). Suggestions go in
-   `tag_suggestions.csv`: put `yes` in its `approve` column for the ones
-   you want (edit the tags first if you like), or `no` to turn one down.
-   `upload` adds approved tags to the song's tags on the site, and
-   `song_list.csv` isn't changed. Modern worship songs usually aren't on
-   hymnary.org, and it has no style tags (pop, rock), so those stay yours
-   to add. The words that map hymnal subjects to tags are in `TAG_WORDS`
-   at the top of that part of the script. Delete `hymnary_cache.json` to
-   look everything up again.
 4. Scan again. Now every file is checked against your song list, and any
    file that doesn't match a song on it is marked `check`. New songs later
    just need a row in the list.
@@ -430,8 +410,6 @@ Running either step again is safe. After any change to your music, just run
   file's contents)
 - renamed or moved files are moved on the site without being sent again
 - a changed song title, key or version (in either spreadsheet) is updated
-- tags from `song_list.csv` are set on their songs, including songs uploaded
-  before (no files are sent again for that)
 - files gone from your folders, or marked `skip`, are listed, and removed
   from the site once you type `yes`
 
@@ -547,7 +525,7 @@ running the scripts from there as before.
 - **Start with Windows** opens the app minimised when you sign in, so
   automatic updates keep going in the background.
 - **Songs...** adds songs to `song_list.csv` without opening Excel. Type a
-  title (plus any other spellings and tags) and click **Add song**. Below
+  title (plus any other spellings) and click **Add song**. Below
   that is a list of titles from your folder that aren't on the song list
   yet (the files waiting as `check`). Pick one and either click **Add as a
   new song** (you can tidy its spelling first), or choose the song it
@@ -559,7 +537,7 @@ running the scripts from there as before.
   its folder in File Explorer with the file picked out. The next
   sync uploads its files. Close `song_list.csv` in Excel first.
   The **Your songs** tab lists every song on `song_list.csv`, with a
-  search box. Click one to change its title, other spellings, tags or
+  search box. Click one to change its title, other spellings or
   note, then **Save changes**. A new title keeps the old one as another
   spelling, so files named the old way still match, and the next sync
   moves the files to the new name. **Delete song** takes a song off the

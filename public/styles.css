@@ -718,8 +718,6 @@ details.preview img { max-width: 100%; margin-top: 10px; border-radius: 10px; }
   padding: 0 2px;
 }
 
-/* ---- Song tags ---- */
-.score-card-text .song-tags { display: block; font-size: 0.8rem; color: var(--accent); }
 form.search select.tag-filter { width: auto; flex: 0 1 180px; }
 /* ==========================================================================
    Music library and prayers: laid out like a sheet music shop, with a paper

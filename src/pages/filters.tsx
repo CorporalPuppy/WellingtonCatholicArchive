@@ -1,6 +1,6 @@
 // The search box and filters shared by the music library, prayers and the
 // PowerPoint archive, so they all look and work the same way:
-//   - a dropdown in the search box (any tag, any season...) that filters
+//   - a dropdown in the search box (any season, updated...) that filters
 //     as soon as you pick something
 //   - a row of pill links along the top, like a shop's categories
 // The styles are .music-search, .tag-filter and .music-filters in styles.css.
