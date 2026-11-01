@@ -536,6 +536,13 @@ running the scripts from there as before.
   spreadsheets), it waits a minute for things to settle, then syncs.
 - **Start with Windows** opens the app minimised when you sign in, so
   automatic updates keep going in the background.
+- **Songs...** adds songs to `song_list.csv` without opening Excel. Type a
+  title (plus any other spellings and tags) and click **Add song**. Below
+  that is a list of titles from your folder that aren't on the song list
+  yet (the files waiting as `check`). Pick one and either click **Add as a
+  new song** (you can tidy its spelling first), or choose the song it
+  really is and click **Link** to add it as another spelling. The next
+  sync uploads its files. Close `song_list.csv` in Excel first.
 - **Fix 'check' rows** opens `import_plan.csv` and `slides_plan.csv`.
 
 A sync never asks questions, so it plays safe:

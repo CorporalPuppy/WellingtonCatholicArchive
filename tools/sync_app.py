@@ -23,6 +23,9 @@ To be safe when nobody is watching, a sync:
   - never removes anything from the site. Files gone from your folders are
     counted, and stay on the site until you click "Remove deleted files".
 
+Songs... adds new songs to song_list.csv without opening Excel, and lists
+the titles in your folder that aren't on it yet, to add or link to a song.
+
 Settings (Music folder, site address, import token) are saved in
 sync_settings.json next to your spreadsheets. It holds the import token, so
 keep it to yourself; it's left out of git.
@@ -30,7 +33,9 @@ keep it to yourself; it's left out of git.
 Only Python's built-in libraries are used, so there is nothing to install.
 """
 
+import csv
 import datetime
+import difflib
 import hashlib
 import json
 import os
@@ -40,7 +45,10 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext
+from tkinter import filedialog, messagebox, scrolledtext, ttk
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from import_music import SONG_LIST_COLUMNS, match_key, read_csv, tidy_tags  # noqa: E402
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 # The spreadsheets live where you've always run the scripts from: the
@@ -214,6 +222,97 @@ def sync(settings, say, remove_deleted=False):
 
 
 # ---------------------------------------------------------------------------
+# Your song list, without Excel
+# ---------------------------------------------------------------------------
+
+def read_song_rows():
+    """song_list.csv as a list of rows, and its columns (yours, in your order)."""
+    rows = read_csv(SONG_LIST)
+    columns = list(rows[0].keys()) if rows else list(SONG_LIST_COLUMNS)
+    for column in SONG_LIST_COLUMNS:
+        if column not in columns:
+            columns.append(column)
+    return rows, columns
+
+
+def write_song_rows(rows, columns):
+    rows.sort(key=lambda song: (song.get("title") or "").lower())
+    with open(SONG_LIST, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=columns, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def song_lookup(rows):
+    """Every spelling (simplified) to its song's title, the same way the scan matches files."""
+    lookup = {}
+    for song in rows:
+        title = (song.get("title") or "").strip()
+        for spelling in [title] + (song.get("other_spellings") or "").split(";"):
+            if spelling.strip() and title:
+                lookup[match_key(spelling)] = title
+    return lookup
+
+
+def split_spellings(text):
+    return [part.strip() for part in (text or "").split(";") if part.strip()]
+
+
+def add_song(title, other_spellings="", tags=""):
+    """Adds a new song to song_list.csv. Returns a problem to show, or None if it worked."""
+    title = re.sub(r"\s+", " ", title or "").strip()
+    if not title:
+        return "Type the song's title."
+    rows, columns = read_song_rows()
+    lookup = song_lookup(rows)
+    spellings = [s for s in split_spellings(other_spellings) if match_key(s) != match_key(title)]
+    for spelling in [title] + spellings:
+        if match_key(spelling) in lookup:
+            return '"{}" is already on the list, as "{}".'.format(spelling, lookup[match_key(spelling)])
+    song = {column: "" for column in columns}
+    song.update(title=title, other_spellings="; ".join(spellings), tags=tidy_tags(tags), note="added in the sync app")
+    rows.append(song)
+    write_song_rows(rows, columns)
+    return None
+
+
+def add_spelling(title, spelling):
+    """Adds another spelling to a song already on song_list.csv. Returns a problem, or None."""
+    spelling = re.sub(r"\s+", " ", spelling or "").strip()
+    rows, columns = read_song_rows()
+    lookup = song_lookup(rows)
+    if match_key(spelling) in lookup:
+        return '"{}" is already on the list, as "{}".'.format(spelling, lookup[match_key(spelling)])
+    for song in rows:
+        if (song.get("title") or "").strip().lower() == (title or "").strip().lower():
+            song["other_spellings"] = "; ".join(split_spellings(song.get("other_spellings")) + [spelling])
+            write_song_rows(rows, columns)
+            return None
+    return 'There\'s no song called "{}" on the list.'.format(title)
+
+
+def unknown_titles():
+    """
+    Titles of files in your folder that don't match any song on the list,
+    from the last scan (the "check" rows in import_plan.csv), with how many
+    files each has. Ones the list now matches are left out.
+    """
+    if not os.path.exists(MUSIC_PLAN) or not os.path.exists(SONG_LIST):
+        return []
+    lookup = song_lookup(read_song_rows()[0])
+    counts = {}
+    for row in read_csv(MUSIC_PLAN):
+        if (row.get("status") or "").strip().lower() != "check":
+            continue
+        if not (row.get("note") or "").startswith("not on song_list.csv"):
+            continue
+        title = (row.get("song_title") or "").strip()
+        if title and match_key(title) not in lookup:
+            counts[title] = counts.get(title, 0) + 1
+    return sorted(counts.items(), key=lambda item: item[0].lower())
+
+
+# ---------------------------------------------------------------------------
 # Starting with Windows
 # ---------------------------------------------------------------------------
 
@@ -278,10 +377,11 @@ class App:
         buttons.pack(fill="x", **pad)
         self.sync_button = tk.Button(buttons, text="Sync now", width=14, command=self.sync_now)
         self.sync_button.pack(side="left")
-        tk.Button(buttons, text="Fix 'check' rows", command=self.open_plans).pack(side="left", padx=6)
+        tk.Button(buttons, text="Songs...", command=self.open_songs).pack(side="left", padx=6)
+        tk.Button(buttons, text="Fix 'check' rows", command=self.open_plans).pack(side="left")
         self.remove_button = tk.Button(buttons, text="Remove deleted files...", command=self.remove_deleted,
                                        state="disabled")
-        self.remove_button.pack(side="left")
+        self.remove_button.pack(side="left", padx=6)
 
         self.status = tk.Label(root, anchor="w", justify="left", text="Not synced yet.")
         self.status.pack(fill="x", **pad)
@@ -412,6 +512,13 @@ class App:
         finally:
             self.root.after(CHECK_EVERY * 1000, self.check_folder)
 
+    def open_songs(self):
+        if not os.path.exists(SONG_LIST):
+            messagebox.showinfo("Choir site sync", "There's no song_list.csv yet. Do the first music import by hand "
+                                                   "(see README), then add songs here.")
+            return
+        SongsWindow(self)
+
     def open_plans(self):
         opened = False
         for path in (MUSIC_PLAN, SLIDES_PLAN):
@@ -447,6 +554,140 @@ class App:
         except queue.Empty:
             pass
         self.root.after(200, self.show_messages)
+
+
+class SongsWindow:
+    """
+    Add songs to song_list.csv, or sort out titles the scan didn't know,
+    without opening Excel. The next sync uploads their files.
+    """
+
+    def __init__(self, app):
+        self.app = app
+        self.window = tk.Toplevel(app.root)
+        self.window.title("Songs")
+        self.window.minsize(560, 480)
+        pad = {"padx": 8, "pady": 4}
+
+        new = tk.LabelFrame(self.window, text="Add a new song")
+        new.pack(fill="x", **pad)
+        new.columnconfigure(1, weight=1)
+        self.title = self.field(new, 0, "Title")
+        self.spellings = self.field(new, 1, "Other spellings")
+        tk.Label(new, text="other ways file names write it, with ; between them", fg="gray").grid(
+            row=2, column=1, sticky="w", padx=8)
+        self.tags = self.field(new, 3, "Tags")
+        tk.Label(new, text="with commas between them, e.g. Marian, Easter", fg="gray").grid(
+            row=4, column=1, sticky="w", padx=8)
+        tk.Button(new, text="Add song", width=14, command=self.add_new).grid(row=5, column=1, sticky="w", padx=8, pady=6)
+
+        unknown = tk.LabelFrame(self.window, text="Titles in your folder that aren't on the song list (from the last sync)")
+        unknown.pack(fill="both", expand=True, **pad)
+        self.list = tk.Listbox(unknown, height=10, exportselection=False)
+        self.list.pack(fill="both", expand=True, padx=8, pady=4)
+        self.list.bind("<<ListboxSelect>>", lambda _: self.picked())
+        actions = tk.Frame(unknown)
+        actions.pack(fill="x", padx=8, pady=4)
+        tk.Button(actions, text="Add as a new song", command=self.add_picked).pack(side="left")
+        tk.Label(actions, text="  or it's another spelling of").pack(side="left")
+        self.same_as = ttk.Combobox(actions, width=32)
+        self.same_as.pack(side="left", padx=4)
+        self.same_as.bind("<KeyRelease>", lambda _: self.filter_titles())
+        tk.Button(actions, text="Link", command=self.link_picked).pack(side="left")
+
+        self.message = tk.Label(self.window, anchor="w", justify="left", fg="darkgreen")
+        self.message.pack(fill="x", **pad)
+        self.refresh()
+
+    def field(self, frame, row, label):
+        tk.Label(frame, text=label).grid(row=row, column=0, sticky="w", padx=8)
+        entry = tk.Entry(frame)
+        entry.grid(row=row, column=1, sticky="ew", padx=8, pady=2)
+        return entry
+
+    def refresh(self):
+        try:
+            rows = read_song_rows()[0]
+            self.all_titles = sorted({(song.get("title") or "").strip() for song in rows} - {""}, key=str.lower)
+            self.unknown = unknown_titles()
+        except SystemExit as error:  # read_csv stops with a message on a file it can't read
+            messagebox.showerror("Songs", str(error), parent=self.window)
+            self.all_titles, self.unknown = [], []
+        self.same_as["values"] = self.all_titles
+        self.list.delete(0, "end")
+        for title, files in self.unknown:
+            self.list.insert("end", "{}   ({} file{})".format(title, files, "" if files == 1 else "s"))
+        if not self.unknown:
+            self.list.insert("end", "None: every file matches a song on the list.")
+
+    def filter_titles(self):
+        typed = match_key(self.same_as.get())
+        self.same_as["values"] = [title for title in self.all_titles if typed in match_key(title)]
+
+    def picked_title(self):
+        chosen = self.list.curselection()
+        if not chosen or not self.unknown:
+            messagebox.showinfo("Songs", "Click a title in the list first.", parent=self.window)
+            return None
+        return self.unknown[chosen[0]][0]
+
+    def picked(self):
+        chosen = self.list.curselection()
+        if chosen and self.unknown:
+            # Suggest the nearest songs on the list, in case it's a misspelling.
+            title = self.unknown[chosen[0]][0]
+            close = difflib.get_close_matches(title, self.all_titles, n=8, cutoff=0.5)
+            self.same_as["values"] = close or self.all_titles
+            self.same_as.set(close[0] if close else "")
+
+    def done(self, problem, success):
+        if problem:
+            messagebox.showinfo("Songs", problem, parent=self.window)
+            return
+        self.message.config(text=success + (" It goes up with the next sync." if self.app.auto.get()
+                                            else " Click Sync now to upload its files."))
+        self.app.say(success)
+        self.refresh()
+
+    def save(self, change):
+        """Runs a change to song_list.csv, catching the file being open in Excel."""
+        try:
+            return change()
+        except PermissionError:
+            return "song_list.csv is open in Excel. Close it and try again."
+        except SystemExit as error:  # read_csv stops with a message on a file it can't read
+            return str(error)
+
+    def add_new(self):
+        title = self.title.get().strip()
+        problem = self.save(lambda: add_song(title, self.spellings.get(), self.tags.get()))
+        if not problem:
+            for entry in (self.title, self.spellings, self.tags):
+                entry.delete(0, "end")
+        self.done(problem, 'Added "{}" to song_list.csv.'.format(title))
+
+    def add_picked(self):
+        title = self.picked_title()
+        if title:
+            # The title from the file name, tidied by hand if you like.
+            self.title.delete(0, "end")
+            self.title.insert(0, title)
+            self.message.config(text='Check the title above (fix its spelling if needed, add tags), then click Add song. '
+                                     'If you change it, the file name\'s spelling is kept as another spelling.')
+            self.spellings.delete(0, "end")
+            self.spellings.insert(0, title)
+            self.title.focus_set()
+
+    def link_picked(self):
+        title = self.picked_title()
+        same_as = self.same_as.get().strip()
+        if not title:
+            return
+        if same_as not in self.all_titles:
+            messagebox.showinfo("Songs", "Pick the song it belongs to from the list.", parent=self.window)
+            return
+        problem = self.save(lambda: add_spelling(same_as, title))
+        self.done(problem, 'Added "{}" as another spelling of "{}".'.format(title, same_as))
 
 
 def main():
