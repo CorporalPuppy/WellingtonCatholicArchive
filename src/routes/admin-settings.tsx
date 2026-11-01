@@ -52,11 +52,12 @@ routes.get("/admin/settings", (c) => {
           <textarea name="announcement" rows={2} maxlength={SETTING_LIMITS.announcement}>{settings.announcement}</textarea>
         </label>
 
-        <h2>Who can see the music, prayers and PowerPoints</h2>
+        <h2>Everything public?</h2>
+        <p>Who can see the music, prayers and PowerPoints without logging in.</p>
         <p class="muted">This also covers rosters, set lists and members-only events. Admin pages always need a login.</p>
         <label class="checkbox">
           <input type="radio" name="everythingPublic" value="yes" checked={settings.everythingPublic} />
-          Everyone, no login needed
+          Everything public: anyone can see them, no login needed
         </label>
         <label class="checkbox">
           <input type="radio" name="everythingPublic" value="no" checked={!settings.everythingPublic} />

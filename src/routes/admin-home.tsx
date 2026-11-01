@@ -40,6 +40,12 @@ routes.get("/admin", async (c) => {
         </div>
         <p class="muted">Uploads stop at 9.5 GB so the site stays on Cloudflare's free plan.</p>
       </div>
+      {admin && (
+        <p>
+          <strong>Everything public:</strong> {c.get("settings").everythingPublic ? "On (no login needed to see music and PowerPoints)" : "Off (members must log in)"}.{" "}
+          <a href="/admin/settings">Change</a>
+        </p>
+      )}
       <ul class="admin-menu">
         {events && (
           <li>
